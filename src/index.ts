@@ -2,14 +2,16 @@ import {
     type ExtensionAPI,
     type SessionManager,
     type SessionEntry,
-} from "@mariozechner/pi-coding-agent";
-import type {
-    TextContent,
-    ImageContent,
-    ToolCall,
-} from "@mariozechner/pi-ai";
-import { Type, type Static } from "@sinclair/typebox";
-import { ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
+    type ExtensionCommandContext,
+    type ContextUsage,
+} from "@earendil-works/pi-coding-agent";
+import {
+    Type,
+    type Static,
+    type TextContent,
+    type ImageContent,
+    type ToolCall,
+} from "@earendil-works/pi-ai";
 import { formatTokens } from "./utils.js";
 
 // Define missing types locally as they are not exported from the main entry point
@@ -19,11 +21,20 @@ interface SessionTreeNode {
     label?: string;
 }
 
-const InternalTools = ["context_tag", "context_log", "context_checkout"];
+const InternalTools = ["context_checkpoint", "context_timeline", "context_compact"];
 let CommandCtx: ExtensionCommandContext | null = null;
-let CheckoutParams: any = null;
+let CompactParams: any = null;
 
 const isInternal = (name: string) => InternalTools.includes(name);
+
+const formatContextUsage = (usage: ContextUsage | undefined, includeTokens = false): string => {
+    if (usage?.percent == null) return "Unknown";
+
+    const percent = `${usage.percent.toFixed(1)}%`;
+    if (!includeTokens || usage.tokens == null) return percent;
+
+    return `${percent} (${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)})`;
+};
 
 const resolveTargetId = (sm: SessionManager, target: string): string => {
     if (target.toLowerCase() === "root") {
@@ -46,20 +57,23 @@ const resolveTargetId = (sm: SessionManager, target: string): string => {
     return target;
 };
 
-const ContextLogParams = Type.Object({
-    limit: Type.Optional(Type.Number({ description: "History limit for visible entries (default: 50)." })),
-    verbose: Type.Optional(Type.Boolean({ description: "If true, show ALL messages. If false (default), collapses intermediate AI steps and only shows 'milestones': User messages, Tags, Branch Points, and Summaries." })),
+const ContextTimelineDescription = "Inspect the active conversation path as a structural map: checkpoints, summaries/compactions, branch points, user turns, and current position. Use when orientation or compact target selection depends on the shape of history.";
+const ContextTimelineParams = Type.Object({
+    limit: Type.Optional(Type.Number({ description: "Maximum visible timeline entries (default: 50)." })),
+    verbose: Type.Optional(Type.Boolean({ description: "If true, show all messages including internal context-tool traffic. If false (default), collapse to structural milestones." })),
 });
 
-const ContextCheckoutParams = Type.Object({
-    target: Type.String({ description: "Where to jump/squash to. Can be a tag name (e.g., 'task-start'), a commit ID, or 'root'. This is the base for your new branch." }),
-    message: Type.String({ description: "The 'Carryover Message' for the new branch. A summary of your *current* progress/lessons that you want to bring with you to the new state. This ensures you don't lose key information when switching contexts. Good summary message: '[Status] + [Reason] + [Important Changes] + [Carryover Data]'" }),
-    backupTag: Type.Optional(Type.String({ description: "Optional tag name to apply to the CURRENT state before checking out. Use this to create an automatic backup of the history you are about to leave/squash." })),
+const ContextCompactDescription = "Create a summarized continuation branch from an earlier checkpoint or history node. The selected target is the branch point; the summary must restore the useful state from the compacted path after that target. This changes conversation history only; it does not modify or roll back disk files or external systems.";
+const ContextCompactParams = Type.Object({
+    target: Type.String({ description: "Checkpoint name, history node ID, or root to use as the branch point for the summarized continuation." }),
+    summary: Type.String({ description: "Handoff summary injected into the new continuation branch. Restore current task/state, decisions/constraints, important external side effects (changed files, processes, browser/tickets/remote state), validation status, source anchors/evidence/open questions likely needed soon, and explicit next step. Do not rely on backupCheckpoint for details needed in the next phase." }),
+    backupCheckpoint: Type.Optional(Type.String({ description: "Optional checkpoint name to label the current conversation state before branching. This is only a recovery pointer; the summary must still contain the state needed to continue." })),
 });
 
-const ContextTagParams = Type.Object({
-    name: Type.String({ description: "The tag/milestone name. Use meaningful names." }),
-    target: Type.Optional(Type.String({ description: "The commit ID to tag. Defaults to HEAD (current state)." })),
+const ContextCheckpointDescription = "Create a named anchor by labeling a conversation history node. This does not branch, summarize, or affect external state; it only makes the point easy to find later in timeline or compact target selection.";
+const ContextCheckpointParams = Type.Object({
+    name: Type.String({ description: "Unique semantic anchor name that encodes the task and phase/purpose, e.g. parser-fix-start or timeout-investigation-search. Avoid generic names like start, checkpoint-1, or retry." }),
+    target: Type.Optional(Type.String({ description: "Optional history node ID or checkpoint name to label. Defaults to the current meaningful position near the conversation head." })),
 });
 
 export default function (pi: ExtensionAPI) {
@@ -68,44 +82,44 @@ export default function (pi: ExtensionAPI) {
         handler: async (args, ctx) => {
             CommandCtx = ctx;
             ctx.ui.notify("Agentic Context Management enabled.", "info");
-            pi.sendMessage({
-                customType: "pi-context",
-                content: "use context-management skill",
-                display: false,
-            }, {
-                deliverAs: "followUp"
-            });
             if (args) {
-                pi.sendUserMessage(args)
+                pi.sendUserMessage(args, { deliverAs: "followUp" });
             }
         }
     });
 
-    // Helper: Check if a tag name already exists in the tree
-    const findTagInTree = (sm: SessionManager, nodes: SessionTreeNode[], tagName: string): string | null => {
-        for (const n of nodes) {
-            if (sm.getLabel(n.entry.id) === tagName) return n.entry.id;
-            const r = findTagInTree(sm, n.children, tagName);
-            if (r) return r;
+    // Helper: Check if a checkpoint name already exists in the tree
+    // Iterative DFS to avoid call stack overflows on deep histories.
+    // Push children in reverse order to preserve left-to-right pre-order semantics.
+    const findCheckpointInTree = (sm: SessionManager, nodes: SessionTreeNode[], checkpointName: string): string | null => {
+        const stack: SessionTreeNode[] = [...nodes].reverse();
+        while (stack.length > 0) {
+            const n = stack.pop()!;
+            if (sm.getLabel(n.entry.id) === checkpointName) return n.entry.id;
+            if (n.children?.length) {
+                for (let i = n.children.length - 1; i >= 0; i--) {
+                    stack.push(n.children[i]);
+                }
+            }
         }
         return null;
     };
 
     pi.registerTool({
-        name: "context_tag",
-        label: "Context Tag",
-        description: "Creates a 'Save Point' (Bookmark) in the history. Use this before trying risky changes or when a feature is stable. 'Untagged progress is risky'.",
-        parameters: ContextTagParams,
-        async execute(_id, params: Static<typeof ContextTagParams>, _signal, _onUpdate, ctx) {
+        name: "context_checkpoint",
+        label: "Context Checkpoint",
+        description: ContextCheckpointDescription,
+        parameters: ContextCheckpointParams,
+        async execute(_id, params: Static<typeof ContextCheckpointParams>, _signal, _onUpdate, ctx) {
             const sm = ctx.sessionManager as SessionManager;
 
-            // Deduplication check: ensure tag name is unique
-            const existingTagId = findTagInTree(sm, sm.getTree(), params.name);
-            if (existingTagId) {
+            // Deduplication check: ensure checkpoint name is unique
+            const existingCheckpointId = findCheckpointInTree(sm, sm.getTree(), params.name);
+            if (existingCheckpointId) {
                 return {
                     content: [{
                         type: "text",
-                        text: `Error: Tag '${params.name}' already exists at ${existingTagId}. Tag names must be unique. Use a different name or delete the existing tag first.`
+                        text: `Error: Checkpoint '${params.name}' already exists at ${existingCheckpointId}. Checkpoint names must be unique. Use a different name or remove the existing one first.`
                     }],
                     details: {}
                 };
@@ -114,8 +128,8 @@ export default function (pi: ExtensionAPI) {
             let id = params.target ? resolveTargetId(sm, params.target) : undefined;
 
             if (!id) {
-                // Auto-resolve: Find the last "interesting" node to tag.
-                // We skip ToolResults (which look ugly tagged) and internal-only Assistant messages (which look empty).
+                // Auto-resolve: Find the last interesting node to checkpoint.
+                // We skip ToolResults that look awkward when checkpointed and internal-only assistant messages that look empty.
                 const branch = sm.getBranch();
                 for (let i = branch.length - 1; i >= 0; i--) {
                     const entry = branch[i];
@@ -149,16 +163,22 @@ export default function (pi: ExtensionAPI) {
             }
 
             pi.setLabel(id, params.name);
-            return { content: [{ type: "text", text: `Created tag '${params.name}' at ${id}` }], details: {} };
+            return {
+                content: [{
+                    type: "text",
+                    text: `Created checkpoint '${params.name}' at ${id}.`
+                }],
+                details: {}
+            };
         },
     });
 
     pi.registerTool({
-        name: "context_log",
-        label: "Context Log",
-        description: "Show the entire history structure (status, message, tags, milestones). Analogous to 'git log --graph --oneline --decorate'",
-        parameters: ContextLogParams,
-        async execute(_id, params: Static<typeof ContextLogParams>, _signal, _onUpdate, ctx) {
+        name: "context_timeline",
+        label: "Context Timeline",
+        description: ContextTimelineDescription,
+        parameters: ContextTimelineParams,
+        async execute(_id, params: Static<typeof ContextTimelineParams>, _signal, _onUpdate, ctx) {
             const sm = ctx.sessionManager as SessionManager;
             const branch = sm.getBranch();
             const currentLeafId = sm.getLeafId();
@@ -186,7 +206,7 @@ export default function (pi: ExtensionAPI) {
                     return e.summary || "[No summary provided]";
                 }
                 if (entry.type === "label") {
-                    return `tag: ${entry.label}`;
+                    return `checkpoint: ${entry.label}`;
                 }
 
                 if (entry.type === "message") {
@@ -250,7 +270,7 @@ export default function (pi: ExtensionAPI) {
                 if (entry.id === currentLeafId) return true;
                 if (branch.length > 0 && entry.id === branch[0].id) return true;
 
-                // 2. Explicit Tags (Labels) - Only show the TAGGED node, not the label node itself
+                // 2. Explicit checkpoints (labels) - only show the checkpointed node, not the label node itself
                 if (sm.getLabel(entry.id)) return true;
                 if (entry.type === 'label') return false; // Hide label nodes, they are redundant
 
@@ -320,7 +340,7 @@ export default function (pi: ExtensionAPI) {
 
                 const id = entry.id;
                 const isRoot = branch.length > 0 && entry.id === branch[0].id;
-                const meta = [isRoot ? "ROOT" : null, isHead ? "HEAD" : null, label ? `tag: ${label}` : null].filter(Boolean).join(", ");
+                const meta = [isRoot ? "ROOT" : null, isHead ? "HEAD" : null, label ? `checkpoint: ${label}` : null].filter(Boolean).join(", ");
 
                 const body = content.length > 100 ? content.slice(0, 100) + "..." : content;
 
@@ -334,29 +354,30 @@ export default function (pi: ExtensionAPI) {
             }
 
             // --- Context Dashboard (HUD) ---
-            const usage = await ctx.getContextUsage();
-            let usageStr = "Unknown";
-            if (usage) {
-                usageStr = `${usage.percent.toFixed(1)}% (${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)})`;
-            }
+            const usageStr = formatContextUsage(ctx.getContextUsage(), true);
 
-            // Find the distance to the nearest tag
-            let stepsSinceTag = 0;
-            let nearestTagName = "None";
+            // Find the distance to the nearest checkpoint
+            let stepsSinceCheckpoint = 0;
+            let nearestCheckpointName = "None";
             for (let i = branch.length - 1; i >= 0; i--) {
                 const id = branch[i].id;
                 const label = sm.getLabel(id);
                 if (label) {
-                    nearestTagName = label;
+                    nearestCheckpointName = label;
                     break;
                 }
-                stepsSinceTag++;
+                stepsSinceCheckpoint++;
             }
+
+            const compactCue = nearestCheckpointName === "None"
+                ? "create a checkpoint before the next noisy phase"
+                : `if this segment has produced a stable result and another phase remains, compact to '${nearestCheckpointName}' with a handoff summary before continuing`;
 
             const hud = [
                 `[Context Dashboard]`,
                 `• Context Usage:    ${usageStr}`,
-                `• Segment Size:     ${stepsSinceTag} steps since last tag '${nearestTagName}'`,
+                `• Segment Size:     ${stepsSinceCheckpoint} steps since last checkpoint '${nearestCheckpointName}'`,
+                `• Compact Cue:      ${compactCue}`,
                 `---------------------------------------------------`
             ].join("\n");
 
@@ -365,11 +386,11 @@ export default function (pi: ExtensionAPI) {
     });
 
     pi.registerTool({
-        name: "context_checkout",
-        label: "Context Checkout",
-        description: "Navigate to ANY point in the conversation history. This checkout only resets *conversation history*, NOT disk files. ALWAYS provide a detailed 'message' to bridge context.",
-        parameters: ContextCheckoutParams,
-        async execute(_id, params: Static<typeof ContextCheckoutParams>, _signal, _onUpdate, ctx) {
+        name: "context_compact",
+        label: "Context Compact",
+        description: ContextCompactDescription,
+        parameters: ContextCompactParams,
+        async execute(_id, params: Static<typeof ContextCompactParams>, _signal, _onUpdate, ctx) {
             if (!CommandCtx) {
                 ctx.ui.setEditorText(`/acm ${ctx.ui.getEditorText() || "continue"}`)
                 return {
@@ -381,6 +402,7 @@ export default function (pi: ExtensionAPI) {
                 };
             }
             const sm = ctx.sessionManager as SessionManager;
+            const usageBeforeText = formatContextUsage(ctx.getContextUsage());
 
             const tid = resolveTargetId(sm, params.target);
 
@@ -388,52 +410,75 @@ export default function (pi: ExtensionAPI) {
             if (currentLeaf === tid) {
                 return { content: [{ type: "text", text: `Already at target ${tid}` }], details: {} };
             }
-            if (params.backupTag && currentLeaf) {
-                pi.setLabel(currentLeaf, params.backupTag);
+            if (params.backupCheckpoint && currentLeaf) {
+                pi.setLabel(currentLeaf, params.backupCheckpoint);
             }
             const currentLabel = currentLeaf ? sm.getLabel(currentLeaf) : undefined;
-            const origin = currentLabel ? `tag: ${currentLabel}` : (currentLeaf || "unknown");
+            const origin = currentLabel ? `checkpoint: ${currentLabel}` : (currentLeaf || "unknown");
 
-            const enrichedMessage = `(summary from ${origin})\n${params.message}`;
+            const enrichedMessage = `(handoff summary from ${origin})\n${params.summary}`;
 
             const nid = await sm.branchWithSummary(tid, enrichedMessage);
-            CheckoutParams = params;
-            CheckoutParams.nid = nid;
-            CheckoutParams.tid = tid;
-            CheckoutParams.enrichedMessage = enrichedMessage;
+            CompactParams = params;
+            CompactParams.nid = nid;
+            CompactParams.tid = tid;
+            CompactParams.enrichedMessage = enrichedMessage;
+            CompactParams.usageBeforeText = usageBeforeText;
 
-            return { content: [{ type: "text", text: "checkout start" }], details: {} };
+            return { content: [{ type: "text", text: "compact start" }], details: {} };
         },
     });
 
-    pi.on("turn_end", async (event, ctx) => {
-        if (!CheckoutParams) {
+    pi.on("turn_end", async (_event, ctx) => {
+        if (!CompactParams) {
             return
         }
         ctx.abort()
     });
 
-    pi.on("agent_end", async (_event, ctx) => {
-        if (!CheckoutParams) {
+    pi.on("agent_end", async () => {
+        if (!CompactParams) {
             return
         }
         if (!CommandCtx) {
             return
         }
 
-        await CommandCtx.navigateTree(CheckoutParams.nid, {
-            summarize: false,
-        });
+        const compactParams = CompactParams;
+        const commandCtx = CommandCtx;
+        CompactParams = null;
 
-        ctx.ui.notify(`Checked out ${CheckoutParams.target}${CheckoutParams.target === CheckoutParams.tid ? "" : `(${CheckoutParams.tid})`}\nBackup tag created: ${CheckoutParams.backupTag || "none"}\nmessage: ${CheckoutParams.enrichedMessage}`, "info");
-        CheckoutParams = null;
+        // `agent_end` is emitted before the core Agent is actually idle. If we
+        // call pi.sendMessage({ triggerTurn: true }) inside this handler, pi still
+        // sees an active stream and queues the message as steering; after
+        // `agent_end` the loop has already stopped, so that queued message is not
+        // drained. Defer navigation + continuation until the current run settles.
+        setTimeout(async () => {
+            try {
+                await commandCtx.waitForIdle();
+                await commandCtx.navigateTree(compactParams.nid, {
+                    summarize: false,
+                });
 
-        pi.sendMessage({
-            customType: "pi-context",
-            content: "context_checkout complete. A summary of your previous branch was injected above. Read it to understand your new state. Execute the 'Next Step' from the summary",
-            display: false,
-        }, {
-            triggerTurn: true,
-        });
+                const usageAfter = commandCtx.getContextUsage();
+                commandCtx.ui.notify([
+                    `Compacted to ${compactParams.target}${compactParams.target === compactParams.tid ? "" : `(${compactParams.tid})`}`,
+                    `Context Usage: ${compactParams.usageBeforeText} -> ${formatContextUsage(usageAfter)}`,
+                    `Backup checkpoint created: ${compactParams.backupCheckpoint || "none"}`,
+                    `Summary: ${compactParams.enrichedMessage}`,
+                ].join("\n"), "info");
+
+                pi.sendMessage({
+                    customType: "pi-context",
+                    content: "context_compact complete. A handoff summary of your previous conversation path was injected above. Read it to understand your new state. Execute the Next Step from the summary",
+                    display: false,
+                }, {
+                    triggerTurn: true,
+                    deliverAs: "followUp",
+                });
+            } catch (err) {
+                commandCtx.ui.notify(`context_compact failed to continue: ${err instanceof Error ? err.message : String(err)}`, "error");
+            }
+        }, 0);
     });
 }

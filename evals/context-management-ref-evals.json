@@ -1,0 +1,58 @@
+[
+  {
+    "id": 1,
+    "category": "primary-ref-search",
+    "query": "这个问题要先搜资料、读很多日志和文档，再从一堆线索里收敛出一个根因和下一步。你自己管理上下文，不要把整段原始研究过程一直背着。",
+    "should_trigger": true,
+    "expected_refs": ["search-research-and-reading.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 2,
+    "category": "primary-ref-development",
+    "query": "我们要修一个比较顽固的 bug，过程里会改代码、跑验证、可能重构一小块实现，再决定是否继续扩大改动。请按适合开发排障的上下文节奏来做。",
+    "should_trigger": true,
+    "expected_refs": ["development-and-troubleshooting.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 3,
+    "category": "primary-ref-plan",
+    "query": "先按一个明确的实施计划来做：我会先确认计划，然后按 todo 一项项执行，过程中可能会回头更新计划。你需要围绕这个 plan 来管理上下文。",
+    "should_trigger": true,
+    "expected_refs": ["planning-and-execution.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 4,
+    "category": "primary-ref-repeated",
+    "query": "这里有一批相似 ticket，要先做一个代表样本，把方法摸清楚，然后按同一套路一条条处理剩下的。每条做完不要把上一条的原始推理带到下一条。",
+    "should_trigger": true,
+    "expected_refs": ["repeated-items-and-batch-work.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 5,
+    "category": "primary-ref-switching-cleanup",
+    "query": "主任务进行到一半时，我接下来会不断插入临时子任务，而且当前线程也已经有点乱。你需要先保护主线，再在适当的时候清理噪声，保证之后能干净地续上。",
+    "should_trigger": true,
+    "expected_refs": ["task-switching-and-cleanup.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 6,
+    "category": "cross-cutting-retry",
+    "query": "这是个开发排障任务，但我们很可能要在 A/B/C 三条路线之间反复试错。请按适合代码排障的方式推进，同时确保失败分支能被干净放弃，不污染主线。",
+    "should_trigger": true,
+    "expected_refs": ["development-and-troubleshooting.md", "retry-branch-and-pivot.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 7,
+    "category": "primary-ref-web-search",
+    "query": "这个问题我要你先联网搜索，再打开几个网页慢慢看，从很多低信息密度的页面里提炼出真正有用的结论和下一步。请按适合搜索和阅读型工作的方式管理上下文。",
+    "should_trigger": true,
+    "expected_refs": ["search-research-and-reading.md"],
+    "must_include_tools": ["context_checkpoint"]
+  }
+]

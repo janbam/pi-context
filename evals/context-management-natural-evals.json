@@ -1,0 +1,69 @@
+[
+  {
+    "id": 1,
+    "category": "natural-search",
+    "query": "最近这个线上问题我还没想明白。想先去网上搜一圈，再翻几个页面和文档看看，最后给我一个靠谱的判断和下一步建议。",
+    "should_trigger": true,
+    "expected_refs": ["search-research-and-reading.md"]
+  },
+  {
+    "id": 2,
+    "category": "natural-browser-reading",
+    "query": "我有几个网页链接要你慢慢看，页面内容很多但真正有用的信息不多。最后只要保留关键结论和后续动作就行。",
+    "should_trigger": true,
+    "expected_refs": ["search-research-and-reading.md"]
+  },
+  {
+    "id": 3,
+    "category": "natural-dev-retry",
+    "query": "这个问题大概率得边改边试，可能要连续试几个方向，失败的路子别一直带着往后走。",
+    "should_trigger": true,
+    "expected_refs": ["development-and-troubleshooting.md", "retry-branch-and-pivot.md"]
+  },
+  {
+    "id": 4,
+    "category": "natural-plan",
+    "query": "这件事我想先拆一下步骤，然后按步骤往下推进。过程中如果计划要调整，你也一起顺着更新就行。",
+    "should_trigger": true,
+    "expected_refs": ["planning-and-execution.md"]
+  },
+  {
+    "id": 5,
+    "category": "natural-repeated",
+    "query": "后面会有一批差不多的问题要处理，你先摸清一个样本怎么做，剩下的按同样套路往下推。",
+    "should_trigger": true,
+    "expected_refs": ["repeated-items-and-batch-work.md"]
+  },
+  {
+    "id": 6,
+    "category": "natural-switching",
+    "query": "我估计会经常打断你问别的事，所以主线先帮我留好续上的点，别到时候又得重新捋。",
+    "should_trigger": true,
+    "expected_refs": ["task-switching-and-cleanup.md"]
+  },
+  {
+    "id": 7,
+    "category": "natural-cleanup",
+    "query": "这个话题已经聊得有点散了，先别全都背着，整理一下该保留的东西，然后从干净点继续。",
+    "should_trigger": true,
+    "expected_refs": ["task-switching-and-cleanup.md"]
+  },
+  {
+    "id": 8,
+    "category": "natural-negative-summary",
+    "query": "你先读一下这几个文件，给我一个简短总结，别搞太复杂。",
+    "should_trigger": false
+  },
+  {
+    "id": 9,
+    "category": "natural-negative-direct-edit",
+    "query": "把这个函数直接改一下，逻辑我已经说明白了，不需要你先研究一大圈。",
+    "should_trigger": false
+  },
+  {
+    "id": 10,
+    "category": "natural-negative-concept",
+    "query": "你觉得在长对话里怎么保持思路清晰比较好？先讲讲方法，不用真的操作。",
+    "should_trigger": false
+  }
+]

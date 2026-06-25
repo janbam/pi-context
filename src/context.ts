@@ -2,8 +2,8 @@ import {
   type ExtensionAPI,
   type SessionManager,
   DynamicBorder,
-} from "@mariozechner/pi-coding-agent";
-import { Container, Text, Spacer } from "@mariozechner/pi-tui";
+} from "@earendil-works/pi-coding-agent";
+import { Container, Text, Spacer } from "@earendil-works/pi-tui";
 import { formatTokens } from "./utils.js";
 
 export default function (pi: ExtensionAPI) {
@@ -61,8 +61,9 @@ export default function (pi: ExtensionAPI) {
       const toolDefTokensRaw = estimateTokens(JSON.stringify(activeToolDefs));
       const totalActual = usage.tokens;
       const limit = usage.contextWindow;
+      const usagePercent = usage.percent;
 
-      if (totalActual == null || limit == null || usage.percent == null) {
+      if (totalActual == null || limit == null || usagePercent == null) {
         ctx.ui.notify("Context usage info not available.", "warning");
         return;
       }
@@ -123,7 +124,7 @@ export default function (pi: ExtensionAPI) {
           gridLines.push(rowStr.trimEnd());
         }
 
-        const totalUsageTitle = `${theme.fg("text", theme.bold("Total Usage".padEnd(16)))} ${theme.fg("text", theme.bold(formatTokens(totalActual).padStart(7)))} ${theme.fg("text", theme.bold(`(${usage.percent.toFixed(1).padStart(5)}%)`))}`;
+        const totalUsageTitle = `${theme.fg("text", theme.bold("Total Usage".padEnd(16)))} ${theme.fg("text", theme.bold(formatTokens(totalActual).padStart(7)))} ${theme.fg("text", theme.bold(`(${usagePercent.toFixed(1).padStart(5)}%)`))}`;
 
         const catDetailLines = categories.map(cat => {
           const labelStr = cat.label.padEnd(14);

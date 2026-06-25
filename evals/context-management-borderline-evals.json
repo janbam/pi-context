@@ -1,0 +1,124 @@
+[
+  {
+    "id": 1,
+    "category": "bounded-multifile-read",
+    "query": "帮我快速过一遍 src/ 和 skills/ 目录，告诉我这个项目的 3 个核心模块分别负责什么。先别进入长期工作流，只要一份简洁概览。",
+    "should_trigger": false,
+    "expected_behavior": "Read and summarize directly; should not proactively enter checkpoint/compact workflow."
+  },
+  {
+    "id": 2,
+    "category": "bounded-multifile-read",
+    "query": "我准备写项目介绍文档，先帮我读 package.json、README 和 src/index.ts，概括一下插件的能力边界。暂时不用管理会话结构。",
+    "should_trigger": false,
+    "expected_behavior": "Plain multi-file synthesis; avoid context-management orchestration."
+  },
+  {
+    "id": 3,
+    "category": "medium-debugging",
+    "query": "这个测试偶尔失败，但目前我只有一条报错和一个怀疑的函数。你先做第一轮定位，只有在你判断对话开始变脏时再管理上下文。",
+    "should_trigger": true,
+    "expected_behavior": "Borderline positive: may start light, but should be willing to introduce checkpoint/timeline if investigation expands."
+  },
+  {
+    "id": 4,
+    "category": "medium-debugging",
+    "query": "先帮我判断这个构建失败更像依赖问题、配置问题还是代码问题。不要一上来就铺很大流程，但如果后面要读很多日志，你自己接管上下文。",
+    "should_trigger": true,
+    "expected_behavior": "Should avoid overreacting immediately, but should switch into context-management mode if the search space grows."
+  },
+  {
+    "id": 5,
+    "category": "repeated-items-vs-script",
+    "query": "这里有 30 条告警记录，我不确定它们是不是同一类问题。你先抽样看 3 条，判断是应该写脚本批量处理，还是先总结套路再一条条过。",
+    "should_trigger": true,
+    "expected_behavior": "Should recognize a workflow-selection problem; context-management is useful because representative investigation may shape the rest."
+  },
+  {
+    "id": 6,
+    "category": "repeated-items-vs-script",
+    "query": "有一批 markdown 文件标题格式不统一，但规则我还没想清楚。先抽几份样本找规律，确认后再决定是直接脚本改还是按 checklist 人工修。",
+    "should_trigger": true,
+    "expected_behavior": "Should trigger because representative-case research determines the downstream workflow."
+  },
+  {
+    "id": 7,
+    "category": "concept-vs-operation",
+    "query": "你给我设计一个“如何在长会话里管理上下文”的实践指南，偏方法论总结，不需要你现在真的操作工具。",
+    "should_trigger": false,
+    "expected_behavior": "Conceptual discussion only; should not operationally use context tools just because the topic matches."
+  },
+  {
+    "id": 8,
+    "category": "concept-vs-operation",
+    "query": "我在想 batch workflow 要不要引入 checkpoint 概念。你先帮我分析利弊，别急着真的进入 checkpoint 工作流。",
+    "should_trigger": false,
+    "expected_behavior": "Mechanism discussion only; should stay explanatory rather than operational."
+  },
+  {
+    "id": 9,
+    "category": "tool-intensity",
+    "query": "接下来我要开始一个大改动，但现在还没动手。你先帮我建立一个稳定起点，后面再看需不需要更重的上下文操作。",
+    "should_trigger": true,
+    "expected_behavior": "Should likely use only a lightweight checkpoint, not an immediate compact or heavy compaction.",
+    "must_include_tools": ["context_checkpoint"],
+    "must_not_include_tools": ["context_compact"],
+    "allowed_first_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 10,
+    "category": "tool-intensity",
+    "query": "我们已经讨论了很久，我怀疑当前上下文里混了很多过期结论。先帮我看一下现在的历史结构，再决定要不要回到更早的锚点。",
+    "should_trigger": true,
+    "expected_behavior": "Should prefer context_timeline first, then decide whether a stronger move is justified.",
+    "must_include_tools": ["context_timeline"],
+    "allowed_first_tools": ["context_timeline"]
+  },
+  {
+    "id": 11,
+    "category": "tool-intensity",
+    "query": "刚才那一轮研究已经把对话弄得很乱了。把真正有用的发现带回来，然后回到开始研究前的干净状态继续。",
+    "should_trigger": true,
+    "expected_behavior": "Strong compact case and should use context_compact or equivalent compaction behavior.",
+    "must_include_tools": ["context_compact"],
+    "allowed_first_tools": ["context_timeline", "context_compact"]
+  },
+  {
+    "id": 12,
+    "category": "subtask-switching",
+    "query": "当前主任务还没做完，但我接下来可能随时插入几个临时子任务。先为主线建立好暂停点，这样我回来时能快速续上。",
+    "should_trigger": true,
+    "expected_behavior": "Should favor checkpoint-first behavior for interruption readiness, rather than premature compact.",
+    "must_include_tools": ["context_checkpoint"],
+    "must_not_include_tools": ["context_compact"],
+    "allowed_first_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 13,
+    "category": "compact-focus",
+    "query": "刚才排查时已经试过两条路，现在确认它们都是死路。把失败原因压成一小段结论，回到开始排查前的稳定点，然后从干净状态继续第三条路线。",
+    "should_trigger": true,
+    "expected_behavior": "Clear compact case after failed branches.",
+    "must_include_tools": ["context_compact"],
+    "allowed_first_tools": ["context_timeline", "context_compact"]
+  },
+  {
+    "id": 14,
+    "category": "compact-focus",
+    "query": "这轮日志研究已经结束了。只保留根因和下一步，然后回到研究开始前的干净状态继续。",
+    "should_trigger": true,
+    "expected_behavior": "Clear compact case after a noisy research phase is complete.",
+    "must_include_tools": ["context_compact"],
+    "allowed_first_tools": ["context_timeline", "context_compact"]
+  },
+  {
+    "id": 15,
+    "category": "checkpoint-vs-compact",
+    "query": "现在只是稍微有点乱，还没到要压缩历史的程度。先帮我打一个点，继续做，不要现在就回到旧锚点。",
+    "should_trigger": true,
+    "expected_behavior": "Checkpoint yes, compact no.",
+    "must_include_tools": ["context_checkpoint"],
+    "must_not_include_tools": ["context_compact"],
+    "allowed_first_tools": ["context_checkpoint"]
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "id": 1,
+    "category": "actionable-web-search",
+    "query": "帮我判断这个线上问题更像什么原因。我把关键信息给你了。请先去网上搜一圈，再读几篇相关页面和文档，最后给我一个靠谱的判断和下一步建议。\n\n问题现象：支付接口在高峰期偶发 504\n错误关键词：upstream timeout, connect reset\n技术栈：Go + Nginx + MySQL + Redis\n最近变更：昨天把连接池上限从 20 改到了 80",
+    "should_trigger": true,
+    "expected_refs": ["search-research-and-reading.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 2,
+    "category": "actionable-browser-reading",
+    "query": "我把几个网页链接给你，你慢慢看，页面内容很多但真正有用的信息不多。最后只保留关键结论和后续动作。\n\n链接：\n- https://developers.cloudflare.com/workers/\n- https://developers.cloudflare.com/workers/configuration/\n- https://developers.cloudflare.com/workers/observability/",
+    "should_trigger": true,
+    "expected_refs": ["search-research-and-reading.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 3,
+    "category": "actionable-dev-retry",
+    "query": "这个 bug 我已经给你具体范围了，应该要边改边试，而且可能要连续试几个方向，失败的路子别一直带着往后走。\n\n范围：`src/index.ts` 里和 context compact 触发有关的逻辑\n目标：减少该触发时不触发的问题",
+    "should_trigger": true,
+    "expected_refs": ["development-and-troubleshooting.md", "retry-branch-and-pivot.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 4,
+    "category": "actionable-plan",
+    "query": "这件事我想先拆一下步骤，然后按步骤往下推进。背景我已经给你。\n\n目标：把 skill 和 refs 结构整理清楚\n限制：不要一下子大改，先出计划，再逐步落地\n要求：过程中如果计划要调整，你也一起顺着更新就行。",
+    "should_trigger": true,
+    "expected_refs": ["planning-and-execution.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 5,
+    "category": "actionable-repeated",
+    "query": "后面会有一批差不多的问题要处理，我先给你一个样本，你先摸清这个样本怎么做，剩下的按同样套路往下推。\n\n样本：README、README.zh、docs/index 这三份文档标题风格不统一，目标是统一成同一套命名方式。",
+    "should_trigger": true,
+    "expected_refs": ["repeated-items-and-batch-work.md"],
+    "must_include_tools": ["context_checkpoint"]
+  },
+  {
+    "id": 6,
+    "category": "actionable-switching",
+    "query": "主线任务是整理 skill 结构，但我接下来可能会不断插入临时问题。你先帮我留好续上的点，后面如果线程乱了也顺手帮我清一下。",
+    "should_trigger": true,
+    "expected_refs": ["task-switching-and-cleanup.md"],
+    "must_include_tools": ["context_checkpoint"]
+  }
+]

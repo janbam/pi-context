@@ -1,258 +1,205 @@
 ---
 name: context-management
-description: Strategies for efficient context management using context_log, context_tag, and context_checkout. Learn when to tag, how to visualize the graph, and safe ways to squash history. Use for complex refactoring, debugging, and long conversations.
+description: Use this skill for multi-turn, phased, or noisy work: research/reading, debugging, plan-then-execute, retries/pivots, background or asynchronous work, handoffs, user decisions, task switching, repeated items, or repeated progress checks. It keeps the conversation as a clean working set with checkpoints, timeline review, and compaction at continuation boundaries. Always use when resuming after context compaction or when a long phase reaches a decision, handoff, validation, or task-switch boundary. Usually skip simple one-shot tasks.
 ---
 
 # Context Management
 
-**CRITICAL: THIS SKILL MANAGES YOUR MEMORY. WITHOUT IT, YOU WILL FORGET.**
+Use this skill to keep the active conversation as a useful **working set** for the next step. Keep raw only the context that still needs direct reasoning; carry the rest as compact task state when that is more efficient.
 
-Your context window is limited. As conversations grow, "pollution" (noise, failed attempts) degrades your reasoning.
+Core rhythm:
 
-**YOU MUST PROACTIVELY MANAGE YOUR HISTORY.**
-Do not wait for the user to tell you.
+- **checkpoint before mess**
+- **review timeline when structure affects the next decision**
+- **compact when a state summary is a better working set than the raw trail**
 
-## The Core Philosophy: Build, Perceive, Navigate
+Use only these tools:
 
-```
-Context Window = RAM (Expensive, volatile, limited)
-Context Graph  = Disk (Cheap, persistent, unlimited)
+- `context_checkpoint`
+- `context_timeline`
+- `context_compact`
 
-→ Move finished tasks from RAM to the Graph.
-```
+## Working-set model
 
-Manage your context window like a Git repository. You are the maintainer.
+Before choosing a tool, ask:
 
-1.  **BUILD the Skeleton (`context_tag`)**:
-    *   Raw conversation is a flat list. **Tags create structure.**
-    *   Without tags, `context_log` is just a list of IDs. With tags, it is a **Map**.
-2.  **PERCEIVE the State (`context_log`)**:
-    *   Check the HUD: Is "Segment Size" too big? You are drifting.
-    *   Check the Graph: Where are you? Are you in a deep branch?
-3.  **NAVIGATE & MERGE (`context_checkout`)**:
-    *   **Squash:** Convert a messy "feature branch" (thinking process) into a single "merge commit" (summary).
-    *   **Jump:** Move between tasks or retry paths without carrying baggage.
+- What am I trying to do next?
+- What facts, constraints, or artifacts must stay raw for that next action?
+- What important data has a reliable external source I can re-check instead of carrying raw?
+- What history is useful only as a conclusion, pointer, or state update?
+- What history is process noise or stale baggage?
 
-## Quick Start: The Loop
+Classify context into:
 
-Follow this cycle for every major task:
+- **Raw context:** user intent, constraints, code/log/error details, evidence, or plan text you expect to inspect directly soon.
+- **State summary:** decisions, findings, lessons, changed files, validation status, source pointers, rejected leads, and next steps that can replace raw process.
+- **Discardable process:** repetitive searches, verbose logs, abandoned hypotheses, false starts, and unrelated turns whose useful value is already captured or gone.
 
-1.  **CHECK:** Verify state.
-    `context_log`
-2.  **START:** Tag the beginning with a semantic name.
-    `context_tag({ name: "<task-slug>-start" })`  // e.g., `auth-login-start`
-3.  **WORK:** Execute steps.
-4.  **MILESTONE:** Tag intermediate stable states.
-    `context_tag({ name: "<task-slug>-plan" })`  // e.g., `auth-login-plan`
-5.  **SQUASH (Autonomous):** If history becomes noisy or low-density, **Squash with Backup**.
-    *   *Action:* `context_checkout({ target: "<task-slug>-start", message: "...", backupTag: "<task-slug>-raw-history" })`
-    *   *Action (Optional):* `context_tag({ name: "<task-slug>-done" })`
-    *   *Safety:* If you need the details later, checkout the backup tag.
+If the active context is already small, coherent, and directly useful for the next step, do not manage it just to be tidy.
 
-## Tool Reference
+## When to use
 
-| Tool | Analog | Purpose | When to Use |
-| :--- | :--- | :--- | :--- |
-| `context_tag` | `git tag` | Bookmark a stable state. | Before risky changes. Before starting a new task. |
-| `context_log` | `git log` | See where you are. | When you feel lost. To find IDs for checkout. |
-| `context_checkout`| `git reset --soft` | **Time Travel / Squash.** | To undo mistakes. To compress history. |
+Use this mode when the work may outgrow one clean thread:
 
-## Critical Rules
+- search, research, browser work, or reading many files/logs/pages/results
+- investigate -> decide -> execute -> validate
+- plan -> implement -> verify
+- background or asynchronous work, handoffs, user decisions, or delayed results
+- multiple approaches, retries, failed branches, comparisons, or pivots
+- repeated similar cases, tickets, reviews, or batch items
+- a main task that may be interrupted by side tasks
+- repeated progress/status checks that indicate active state is hard to track
+- scattered threads that need cleanup before continuing
+- debugging, troubleshooting, refactoring, migration, or code-facing work that may get noisy
 
-### Tag Wisely (Build The Skeleton)
+If one of these clearly applies, take a structural action now, usually a checkpoint. Do not merely describe the workflow. If the user has not provided enough task details, still checkpoint the workflow shape before asking clarifying questions.
 
-Tags are the "Table of Contents". Name them so you can understand the history at a glance.
+Usually skip this skill for one-shot reads, bounded summaries, direct rewrites, simple lookups, deterministic scripts, short tasks that can stay clean, or moments where the active context is already a good working set.
 
-**Naming Formula:** `<task-slug>-<phase>`
+## Start-of-turn check
 
-*   **task-slug**: Short, kebab-case identifier for the task (e.g., `auth-login`, `db-migration`)
-*   **phase**: The stage of work (`start`, `plan`, `impl`, `done`, `fail`, `backup`)
+At the start of each new user message, classify it:
 
-| Bad (Generic) | Good (Semantic) | Why |
-| :--- | :--- | :--- |
-| `task-start` | `auth-oauth-start` | Describes WHAT task |
-| `pre-research` | `error-log-analysis-start` | Future-you knows the topic |
-| `phase-1-done` | `db-schema-plan-done` | Know which phase of which task |
-| `debug-retry` | `null-pointer-fix-retry` | What bug? |
+- **Same task / next phase:** continue; if the previous phase is complete and noisy, compact before the next phase.
+- **Correction or follow-up:** usually answer from recent context; do not compact yet.
+- **New task or direction shift:** if the previous task left a complete noisy segment, inspect timeline when anchors are unclear, then compact to a continuation anchor that gives the new task a clean working set.
 
-**Tag Categories:**
+Think of the tools as a phase pipeline: checkpoint marks anchors, work happens, timeline shows structure, and compact creates a new branch from the chosen continuation anchor with a summary of what happened after it. The target is a working-set choice, not an age choice.
 
-| Category | Pattern | Examples |
-| :--- | :--- | :--- |
-| **Start** | `<task>-start` | `auth-jwt-start`, `docker-setup-start` |
-| **Plan** | `<task>-plan` | `api-v2-plan`, `migration-plan` |
-| **Milestone** | `<task>-<milestone>` | `auth-jwt-impl-done`, `tests-passed` |
-| **Backup** | `<task>-raw-history` | `auth-jwt-raw-history` |
-| **Failure** | `<task>-fail-<reason>` | `auth-jwt-fail-timeout` |
+## Main loop
 
-**How to generate:** Ask yourself "What is the task?" → Extract 1-3 keywords (e.g., "fix login timeout" → `login-timeout-fix-start`)
+1. Before noisy work, create a semantic checkpoint as the first context-management action. If the first job is orientation over existing history, run `context_timeline` before adding a new checkpoint.
+2. When the task shape is clear, read one matching scenario reference only if it will change tool timing, anchor choice, or summary content. Skip reference loading for obvious short applications where this main skill body is enough.
+3. Add checkpoints at meaningful milestones: phase boundaries, risky attempts, reusable batch methods, and interruptions.
+4. Use `context_timeline` when the active path structure affects the next decision or compact target.
+5. At continuation boundaries, run the compact gate before starting another phase. If the whole requested task is complete and only the final response remains, answer and wait.
+6. After a successful compact, continue from the injected summary instead of dragging the full raw path forward.
 
-### Squash Noise, Keep Signal, Focus on Goal (Context Hygiene)
-Think of your conversation as a "Feature Branch" full of messy thoughts.
-**You must distinguish Signal from Noise.**
+## Continuation boundaries
 
-*   **Signal (High Value):** Design decisions, user constraints, final working code. -> **KEEP.**
-*   **Noise (Low Value):** Failed attempts, long tool outputs, "thinking" steps. -> **SQUASH.**
-*   **Focus on Goal:** Ask yourself: "Does this message help me achieve the current goal?" -> **KEEP.**
+A continuation boundary is a point where the current phase has produced a stable result and the next action will use that result to start a different phase. It is not necessarily the end of the user's whole task.
 
-**When to Squash:**
-1.  **Task Done:** Convert the messy process into one clean summary.
-2.  **Low Density:** You read 2000 lines but only found 1 error.
+Examples: investigation -> decision/plan/implementation, implementation -> validation, failed validation -> next approach, delayed result -> routing/action, user decision -> execution, rejected branch -> replacement direction, side request -> pause/summarize mainline before switching.
 
-**Safety:** Squashing is **LOSSLESS**.
-By using `backupTag`, you save the "Messy Branch" forever. You can always checkout the backup tag if the summary isn't enough.
-*   **Main Trunk:** Jump back to the summary.
-*   **Backup Tag:** Jump back to the raw details.
+Do not ask only "is the whole task done?" Ask "will the next action start a new phase using the stable result of this phase?" If yes, this is often a compaction boundary.
 
-### Fail Fast, Revert Faster
-If you fail 3 times:
-1.  **STOP.** Don't try a 4th time.
-2.  `context_checkout` back to the last safe tag.
-3.  Summarize the failure in the checkout message ("Tried X, failed because Y").
-4.  Try a new approach from the clean state.
+Handoffs are not final answers: if a response transfers control to the user, another actor/process, later validation, or a queued phase, compact when the prior phase was noisy and the next action needs only stable state.
 
-### After Checkout: Execute Next Step
+## Read the right reference
 
-When `context_checkout` completes and injects a summary, you are in a **new context**.
+Read **one primary reference** only when the scenario pattern will affect tool timing, anchor choice, or summary content:
 
-1. **READ** the injected summary carefully
-2. **EXECUTE** the `Next Step` from the summary - this is your new task.
+- search / research / reading-heavy work -> `references/search-research-and-reading.md`
+- development / debugging / troubleshooting / refactoring / migration -> `references/development-and-troubleshooting.md`
+- planning / staged execution / todo-driven work -> `references/planning-and-execution.md`
+- repeated similar items / batch work -> `references/repeated-items-and-batch-work.md`
+- task switching / pause-resume / interruptions / cleanup-and-continue -> `references/task-switching-and-cleanup.md`
+- interleaved async work / overlapping fronts / background results / user decisions -> `references/interleaved-async-work.md`
 
-## Decision Matrix: When to Act
+Also read `references/retry-branch-and-pivot.md` when multiple approaches, failed branches, comparisons, retries, or pivots become central.
 
-| Situation | Action | Reason |
-| :--- | :--- | :--- |
-| **Starting Task** | `context_tag({ name: "<task-slug>-start" })` | Create a rollback point. |
-| **Research / Logs** | `context_checkout` (Squash) | **Process is Noise.** Read 2000 lines -> Keep result. |
-| **Messy Debugging** | **Squash w/ Backup** | **Cleanup.** The error logs are noise once fixed. |
-| **Task Done (Candidate)**| **Squash w/ Backup** | **Assume Success.** Summary is usually enough. Backup exists if not. |
-| **Goal Shift** | `context_checkout` (Squash) | Old context is irrelevant. |
-| **Drift (some steps w/o tag)** | **Tag (Milestone)** | Maintain the skeleton. Don't fly blind. |
+## Tool policy
 
-## The "Context Health" Check
+### `context_checkpoint`
 
-If you cannot answer these, run `context_log`:
+Use before noisy work, a new phase, a risky attempt, switching subtasks, or after a meaningful milestone. Use semantic names such as `<task>-start`, `<task>-<phase>`, `<task>-<attempt>`, or `<task>-<milestone>`. Avoid generic names like `start`, `checkpoint-1`, or `retry`.
 
-| Question | Answer Source |
-| :--- | :--- |
-| **Where is the skeleton?** | The sequence of `tag`s in the log. |
-| **Is this history useful?** | If "No" -> **SQUASH IT.** |
-| **Am I in a loop?** | Repeated entries in the graph. |
+### `context_timeline`
 
-## Good Checkout Messages
+Use it as the structural view of the active path:
 
-The `message` is your lifeline to your past self.
-A good message preserves critical context that would otherwise be lost.
+- when the current path shape affects the next decision
+- when several checkpoints, branches, or task switches exist
+- before choosing a non-obvious compact target
+- when the thread feels cluttered and you need to distinguish useful context from baggage
 
-Structure: `[Key Finding/Status] + [Reason] + [Important Changes] + [Next Step]`
+When reading the timeline, ask which raw messages are still needed for the immediate next action, which paths are now baggage, and which anchor gives the smallest sufficient working set after summary injection.
 
-*   **Key Finding/Status**: What did you discover or complete? Include specific numbers, errors, or outcomes.
-*   **Reason**: Why are you branching/moving? (e.g., "Task complete", "Approach failed", "Need raw logs")
-*   **Important Changes**: What files or logic have been modified? (This checkout only resets *conversation history*, NOT disk files, so you must remember what changed.)
-*   **Next Step**: What should you do immediately after this squash? Be specific. (e.g., "Wait for user feedback", "Implement the recommended fix", "Revert file X and try approach Y")
+### `context_compact`
 
-Examples:
+Use it to replace raw history with a state summary when the next phase would benefit from a smaller working set.
 
-*   *Good (Resetting after failure)*: "Recursive parser hit stack overflow at depth 8000. Switching to iterative. **Reason**: Stack limit reached. **Important Changes**: Modified `utils/recursion.ts`. **Next Step**: Inform user of the failure and propose iterative approach."
-*   *Good (Cleaning up)*: "Auth module complete: JWT + OAuth2 + RBAC. 23 tests passing. **Reason**: Task done, cleaning context. **Important Changes**: Created `auth/`, modified `routes.ts` and `middleware.ts`. **Next Step**: Report completion to user, ask if they want to review or test."
-*   *Bad*: "Switching context." (Too vague - you will forget why)
-*   *Bad*: "Done." (What is done? What should you do next?)
+Typical compact boundaries: investigation -> execution, diagnosis -> fix, implementation -> validation, failed attempt -> next attempt, representative item -> remaining batch, completed noisy task -> new user task.
 
-## Anti-Patterns
+Strong signals to consider compaction:
 
-| Don't | Do Instead |
-| :--- | :--- |
-| **Blind Tagging** (Tagging without looking) | **Check** (`context_log`) to avoid duplicates or tagging noise. |
-| **Over-Tagging** (Tagging every step) | **Tag** only major phase changes (`start`, `milestone`). |
-| **Hoard** (Keep all history "just in case") | **Squash** low-density history (research, logs). |
-| **Panic** (Apologize repeatedly for errors) | **Revert** (`context_checkout`) to before the error. |
-| **Blind Checkout** (Guessing IDs) | **Look** (`context_log`) first to get valid IDs. |
-| **Vague Summaries** ("Done", "Fixed") | **Detailed Summaries** ("Found bug in line 40. Fixed with patch X.") |
-| **Generic Tag Names** (`task-start`, `phase-1`) | **Semantic Names** (`auth-jwt-start`, `db-schema-plan`) |
-| **Missing Next Step** in checkout message | **Always specify** what to do after squash (e.g., "Wait for user", "Implement fix X") |
+- repeated progress/status checks
+- inability to summarize current state, next action, and open risks in one short paragraph
+- rejected, abandoned, or superseded branches
+- stable result after many tool calls or long output
+- returned background/asynchronous/delegated result
+- material plan or approach change
+- side question arriving while stale process history is active
 
-## Recipes (Copy-Paste)
+Do not compact while exploration is still active, when the result is unstable, just because the skill triggered, or just because the user-visible task ended.
 
-### 1. The "Miner" (Immediate Squash)
-**Goal:** Pure information gathering (Reading files, Searching web).
-**Why:** The *process* of searching is irrelevant. Only the *result* matters.
+## Compact gate
 
-**Example Task:** Analyzing error logs to find root cause of timeout
+Before calling `context_compact`, require all three:
 
-```javascript
-// 1. Tag BEFORE starting the noisy work (use descriptive name)
-context_tag({ name: "timeout-analysis-start" });
+1. The segment being left behind is noisy, stale, failed, low-value in raw form, or actively reducing focus.
+2. You can restore the useful task state in a clear summary.
+3. There is an immediate continuation that benefits from cleaner context.
 
-// ... (Read 5 log files, search 3 docs, find DB connection pool exhaustion) ...
+If the compact is prompted by a new user message, a direction shift, or several possible checkpoint targets, run `context_timeline` first and choose the target from visible structure rather than memory.
 
-// 2. Squash IMMEDIATELY. Do not wait for user.
-context_checkout({
-  target: "timeout-analysis-start",
-  message: "Found DB connection pool exhaustion as root cause (pool size: 10, peak load: 1000 req/s). Recommended fix: increase to 50. **Reason**: Context cleanup after research. **Important Changes**: None (read-only). **Next Step**: Report findings to user and await approval to implement fix.",
-  backupTag: "timeout-analysis-raw-history" // Safety backup
-});
-context_tag({ name: "timeout-analysis-done" });
-```
+If the whole task is done and only the final answer remains, wait. Compact later only if the next user message makes it useful.
 
-### 2. The "Candidate" (Wait for Confirmation)
-**Goal:** You finished a complex task.
-**Why:** The history is noisy. The result is clean.
-**Safety:** We create a backup tag automatically.
+Checkpoint-only failure mode: a checkpoint is useful because it gives you a clean anchor to compact back to later. After any checkpointed phase produces a stable result, ask what the phase settled, whether the next step is different, and whether a summary can replace the raw trail. If yes, compact; do not keep accumulating raw history just because the overall task is still active.
 
-**Example Task:** Implementing OAuth login flow
+## Choosing target and backup
 
-```javascript
-// Squash to Summary (Optimistic Cleanup)
-context_checkout({
-  target: "oauth-impl-start", // Squash range: Start -> Now
-  message: "OAuth2 flow implemented with PKCE, Google + GitHub providers. All 12 tests passing. **Reason**: Task complete, cleaning up. **Important Changes**: Created `auth/oauth.ts`, modified `routes.ts`, `config.ts`. **Next Step**: Report completion to user, summarize what was implemented.",
-  backupTag: "oauth-impl-raw-history"
-});
-context_tag({ name: "oauth-impl-candidate" });
-```
+Choose the continuation anchor by designing the next working set:
 
-### 3. The "Undo" (Revert Squash)
-**Goal:** User asks about a detail you squashed away.
-**Action:** Jump back to the backup tag.
+1. Name the immediate next action.
+2. Decide what must remain raw: active user intent, current constraints, still-open evidence/code context, an approved plan being executed, or details you expect to inspect directly next.
+3. Decide what can become state summary or disappear: completed searches, verbose logs, failed attempts, stale branches, earlier unrelated tasks, externally recoverable data, and clear process details.
+4. Pick the anchor that leaves the new branch with the **smallest sufficient context** after summary injection.
+5. If an older anchor plus a stronger summary is cleaner than a recent anchor plus stale context, prefer the older anchor. When completed fronts fill the middle of the thread, it can be correct to compact to a much older anchor or even `root` if the summary restores the active front and source pointers.
 
-**Example Task:** Reviewing OAuth implementation details
+Avoid targets that are too late, too early with a weak summary, or semantically wrong. If there are several checkpoints, a task switch, or uncertainty about the best working set, run `context_timeline` first.
 
-```javascript
-// Jump back to the raw history
-context_checkout({
-  target: "oauth-impl-raw-history",
-  message: "Reviewing token refresh logic - user reports 401 after 15 min idle. Suspect refresh token not firing. **Reason**: Need raw logs to trace the bug. **Important Changes**: None. **Next Step**: Re-read token refresh implementation and identify the bug."
-});
-context_tag({ name: "oauth-review-start" });
-```
+Use `backupCheckpoint` when raw history may still matter later. A backup is a recovery safety net, not a substitute for the summary.
 
-### 4. Branching (Alternative Approach)
-**Scenario:** Method A failed (and was squashed). You want to try Method B from the clean state.
-**Action:** Checkout the start point.
+## Compact summary contract
 
-**Example Task:** Fixing memory leak - trying different approaches
+The summary is not a transcript recap. It is the state needed to resume work from the chosen anchor; older or cleaner anchors require stronger summaries.
 
-```javascript
-// Method A (weak references) failed, trying Method B (object pooling)
-context_checkout({
-  target: "memory-leak-fix-start", 
-  message: "WeakRef approach failed: objects GC'd within 30s (expected: 5min). Cache hit rate dropped from 95% to 12%. **Reason**: Switching to object pooling approach. **Important Changes**: `CacheManager.ts` modified (will revert). **Next Step**: Revert `CacheManager.ts` changes and implement object pooling strategy."
-});
-context_tag({ name: "memory-leak-pool-approach-start" });
-```
+Context tools change conversation state, not the outside world. Files, processes, browser state, tickets, databases, remote services, and other side effects stay current. If you compact to an anchor before those changes, the summary must bridge the gap between old conversation context and current external state.
 
-### 5. The "Undo" (Failed Attempt)
-You tried to fix a bug but broke everything.
-**Goal:** Clean up a failed path.
+A compact summary must restore:
 
-**Example Task:** Fixing race condition in async handler
+1. **Task state:** current task, user intent, constraints, decisions, assumptions, and known result/progress/failure.
+2. **External state:** changed files, created/deleted artifacts, running/stopped processes, browser actions, tickets/records, deployments, remote changes.
+3. **Verification state:** commands already run, validation status, notable outputs, and remaining risks or open questions.
+4. **Navigation state:** source anchors/evidence when needed, rejected leads worth avoiding, backup checkpoint guidance, and explicit next step.
 
-```javascript
-// Attempted mutex-based fix, but introduced deadlock
-context_checkout({
-  target: "race-condition-fix-start",
-  message: "Mutex caused deadlock: Thread A holds mutex, awaits callback; callback needs mutex held by B; B waits for A. Circular wait detected. **Reason**: Trying lock-free CAS approach next. **Important Changes**: `AsyncQueue.ts` lines 70-90 modified (backup saved). **Next Step**: Revert `AsyncQueue.ts` and implement lock-free compare-and-swap approach.",
-  backupTag: "race-condition-mutex-fail" // Save the failure for reference
-});
-context_tag({ name: "race-condition-lockfree-start" });
-```
+If important data has a reliable external source, preserve the pointer and retrieval method rather than copying the raw data. Examples: file path and line/query, database table/query, task/job id, log path, URL, record id, branch/commit, or command to inspect status. Include raw values only when they are small, unstable, hard to retrieve, or needed for immediate reasoning.
+
+For long-running work, shape the summary as a state capsule: goal, stable result, decisions, rejected paths, current artifacts/source pointers, active work, pending input, risks/open questions, and next action. Include why compacting is appropriate only when it helps future orientation. Avoid vague summaries like `Done`, `Investigated`, `Switching context`, or `Going back`.
+
+Before compacting, quickly check: stable state? real continuation? smallest sufficient working set? summary restores state after the anchor? externally recoverable data represented by pointers? external side effects and validation captured? explicit next step?
+
+## After compact
+
+1. Read the injected summary carefully and treat it as the new active state.
+2. Verify it contains enough state for the next action.
+3. Remember that disk and external systems were not rolled back; inspect current files/tools/services when state matters.
+4. If a missing detail is cheap to reconstruct from disk, tools, or source anchors, retrieve it directly.
+5. Return to the backup checkpoint only when the missing raw context cannot be reconstructed cheaply.
+
+## Common mistakes
+
+Avoid:
+
+- checkpointing constantly without phase meaning
+- checkpointing early but never compacting after a stable phase result
+- compacting blindly without timeline when anchor choice is unclear
+- preserving too much raw history because older anchors or `root` feel risky
+- using an old anchor or `root` with a weak summary
+- compacting immediately after a final deliverable when no next user intent is known
+- carrying completed noisy phases into a new task
+- treating handoff or decision prompts as final answers when a continuation is expected
+- writing summaries that recap history but fail to restore current task state
+- assuming compact or branch navigation reverts files, processes, browser state, or remote services
+- omitting decisions, constraints, external side effects, changed files, validation status, or next step

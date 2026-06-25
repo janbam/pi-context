@@ -1,0 +1,94 @@
+[
+  {
+    "query": "我这边有 18 个客户 case 要一个个排查，每个 case 都要先看日志、查配置、再写处理结论。你先研究一个代表 case，总结出处理套路，然后按同一套路逐个处理剩下的。",
+    "should_trigger": true
+  },
+  {
+    "query": "这个 bug 估计要读很多源码和日志，你自己判断什么时候该 checkpoint、什么时候该回看 timeline。我不想最后因为聊天太长把前面的结论忘了。",
+    "should_trigger": true
+  },
+  {
+    "query": "先别急着改代码，先把这个模块的调用链研究清楚。过程里可能会看很多文件，但我最后只想保留关键结论和下一步计划。",
+    "should_trigger": true
+  },
+  {
+    "query": "我要做一个多阶段迁移：先盘点现状，再写迁移方案，再分批改 12 个服务，最后回归验证。请你主动做 checkpoint，并在阶段切换时看一下 timeline。",
+    "should_trigger": true
+  },
+  {
+    "query": "有一串工单要处理，格式都差不多：确认现象、定位根因、给修复建议、记录结果。你先研究一个样本，再依次处理。",
+    "should_trigger": true
+  },
+  {
+    "query": "我们可能要在 A 方案、B 方案、C 方案之间来回试，我希望失败路径不要污染主思路，试完一个方向就帮我回到干净锚点。",
+    "should_trigger": true
+  },
+  {
+    "query": "这个对话已经很长了，后面还要继续做实现和测试。请你自己管理上下文，只保留对下一步有用的信息。",
+    "should_trigger": true
+  },
+  {
+    "query": "先研究这套上线流程怎么操作，提炼成可复用的方法，然后我会给你一批发布单，你按这个方法一单一单处理。",
+    "should_trigger": true
+  },
+  {
+    "query": "先帮我把这个问题研究透：相关代码分散在 api/、worker/、scheduler/ 和 docs/，我担心读着读着会把关键线索冲掉。你需要自己决定什么时候建立锚点、什么时候压缩。",
+    "should_trigger": true
+  },
+  {
+    "query": "这不是一次性实现，我想边研究边试错。每当你确认一条路线无效，就把失败原因压成一小段总结，然后回到上一个稳定点再继续。",
+    "should_trigger": true
+  },
+  {
+    "query": "我要你做一个长链路排障：先收集线索，再定位原因，再提出修复，再执行验证。过程里应该会出现大量日志和无效尝试，请主动管理会话结构。",
+    "should_trigger": true
+  },
+  {
+    "query": "这个主任务做到一半时，我可能会不断插入临时子任务。请你提前建立好暂停点，方便之后回到干净状态继续主线。",
+    "should_trigger": true
+  },
+  {
+    "query": "接下来要做一个比较大的改动，不过现在只是准备开始。先帮我建立一个稳定起点，后面再按进展决定要不要做更重的上下文操作。",
+    "should_trigger": true
+  },
+  {
+    "query": "帮我看一下 src/index.ts 这个文件主要做了什么，给个简短总结就行。",
+    "should_trigger": false
+  },
+  {
+    "query": "把这段 TypeScript 改成 Python，功能保持一致。",
+    "should_trigger": false
+  },
+  {
+    "query": "解释一下 context_compact 这个工具是什么意思，最好举个简单例子。",
+    "should_trigger": false
+  },
+  {
+    "query": "我这边只有一个线上报错，先帮我快速看下 stack trace 里最可能的问题点。",
+    "should_trigger": false
+  },
+  {
+    "query": "把 README 里的中文翻成英文，尽量自然一点。",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我搜一下这个报错在网上常见原因，不用改代码，列几个可能性就行。",
+    "should_trigger": false
+  },
+  {
+    "query": "有 40 条数据要修，但我已经把修复规则定死了，你直接写脚本批量改文件，不需要一条条分析。",
+    "should_trigger": false
+  },
+  {
+    "query": "我想知道 pi-context 这个插件的大致设计思路，读下 package.json、README 和 src/index.ts 后概括给我。",
+    "should_trigger": false
+  },
+  {
+    "query": "帮我做个排障方案大纲，不用真的开始查日志，也不用现在管理会话，只要给出步骤列表。",
+    "should_trigger": false
+  },
+  {
+    "query": "你给我设计一个“如何在长会话里管理上下文”的实践指南，偏方法论总结，不需要你现在真的操作工具。",
+    "should_trigger": false
+  }
+]

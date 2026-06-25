@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "category": "completed-task-follow-up-no-compact",
+    "purpose": "完成一个 noisy task 后，用户只是沿着刚才答案继续追问；不应因为上一轮刚完成就立刻 compact。",
+    "turns": [
+      {
+        "query": "我怀疑这个 skill 对 compact 的边界说明还不够稳。请你先做一轮偏研究型梳理：通读 `skills/context-management/SKILL.md`、`skills/context-management/references/search-research-and-reading.md`、`skills/context-management/references/development-and-troubleshooting.md`、`skills/context-management/references/planning-and-execution.md`、`skills/context-management/references/repeated-items-and-batch-work.md`、`skills/context-management/references/task-switching-and-cleanup.md`、`skills/context-management/references/retry-branch-and-pivot.md` 和 `evals/README.md`，找出“什么时候该 compact / 不该 compact”的主规则，并给我一个简洁结论：最关键的判断门槛是什么。这个过程可能会读很多文档，你自己管理上下文；但如果整个任务做完只剩最终答复，不要为了收尾自动做更重的动作。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_checkpoint"]
+      },
+      {
+        "query": "把你刚才说的“最关键判断门槛”改写成 3 条更短、更好执行的规则。保持在刚才的结论基础上展开，不要另起一套。",
+        "must_not_include_tools": ["context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "category": "completed-task-correction-no-compact",
+    "purpose": "完成 noisy task 后，用户只是要求修正刚才答案；通常不应先 compact。",
+    "turns": [
+      {
+        "query": "我怀疑这个 skill 对 compact 的边界说明还不够稳。请你先做一轮偏研究型梳理：通读 `skills/context-management/SKILL.md`、`skills/context-management/references/search-research-and-reading.md`、`skills/context-management/references/development-and-troubleshooting.md`、`skills/context-management/references/planning-and-execution.md`、`skills/context-management/references/repeated-items-and-batch-work.md`、`skills/context-management/references/task-switching-and-cleanup.md`、`skills/context-management/references/retry-branch-and-pivot.md` 和 `evals/README.md`，找出“什么时候该 compact / 不该 compact”的主规则，并给我一个简洁结论：最关键的判断门槛是什么。这个过程可能会读很多文档，你自己管理上下文；但如果整个任务做完只剩最终答复，不要为了收尾自动做更重的动作。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_checkpoint"]
+      },
+      {
+        "query": "刚才的结论里第二点我不满意。不要切到新任务，就在刚才答案上改写第二点，让它更像 agent instruction。",
+        "must_not_include_tools": ["context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 3,
+    "category": "completed-task-new-task-should-compact",
+    "purpose": "上一轮 noisy task 已完成；下一轮用户开启完全不同的新任务。应先 compact 前一轮，再开始新任务。",
+    "turns": [
+      {
+        "query": "我怀疑这个 skill 对 compact 的边界说明还不够稳。请你先做一轮偏研究型梳理：通读 `skills/context-management/SKILL.md`、`skills/context-management/references/search-research-and-reading.md`、`skills/context-management/references/development-and-troubleshooting.md`、`skills/context-management/references/planning-and-execution.md`、`skills/context-management/references/repeated-items-and-batch-work.md`、`skills/context-management/references/task-switching-and-cleanup.md`、`skills/context-management/references/retry-branch-and-pivot.md` 和 `evals/README.md`，找出“什么时候该 compact / 不该 compact”的主规则，并给我一个简洁结论：最关键的判断门槛是什么。这个过程可能会读很多文档，你自己管理上下文；但如果整个任务做完只剩最终答复，不要为了收尾自动做更重的动作。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_checkpoint"]
+      },
+      {
+        "query": "现在换个完全不同的新任务：只看 `package.json`，告诉我这个项目有哪些 npm scripts，以及它们大概做什么。",
+        "must_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_timeline", "context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 4,
+    "category": "same-task-next-phase-can-compact",
+    "purpose": "上一轮研究阶段已完成，下一轮进入同一任务的下一阶段；应允许在阶段边界先 compact，再继续推进。",
+    "turns": [
+      {
+        "query": "我怀疑这个 skill 对 compact 的边界说明还不够稳。请你先做一轮偏研究型梳理：通读 `skills/context-management/SKILL.md`、`skills/context-management/references/search-research-and-reading.md`、`skills/context-management/references/development-and-troubleshooting.md`、`skills/context-management/references/planning-and-execution.md`、`skills/context-management/references/repeated-items-and-batch-work.md`、`skills/context-management/references/task-switching-and-cleanup.md`、`skills/context-management/references/retry-branch-and-pivot.md` 和 `evals/README.md`，找出“什么时候该 compact / 不该 compact”的主规则，并给我一个简洁结论：最关键的判断门槛是什么。这个过程可能会读很多文档，你自己管理上下文；但如果整个任务做完只剩最终答复，不要为了收尾自动做更重的动作。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_checkpoint"]
+      },
+      {
+        "query": "刚才的研究阶段到这里就够了。现在进入同一任务的下一阶段：基于你刚才的结论，指出应该改哪些文档文件、每个文件改什么。开始前先把研究阶段压成可继续的摘要，再从干净状态往下推。",
+        "must_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_timeline", "context_compact"]
+      }
+    ]
+  }
+]

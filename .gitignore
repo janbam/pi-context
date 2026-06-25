@@ -3,3 +3,6 @@ dist
 .pi
 .DS_Store
 *.log
+__pycache__/
+*.pyc
+evals/run-*
