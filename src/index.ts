@@ -22,6 +22,8 @@ interface SessionTreeNode {
 }
 
 const InternalTools = ["context_checkpoint", "context_timeline", "context_compact"];
+const PiContextCustomMessageType = "pi-context";
+const AcmEnableFollowUp = "Agentic context management is now enabled";
 let CommandCtx: ExtensionCommandContext | null = null;
 let CompactParams: any = null;
 
@@ -34,6 +36,33 @@ const formatContextUsage = (usage: ContextUsage | undefined, includeTokens = fal
     if (!includeTokens || usage.tokens == null) return percent;
 
     return `${percent} (${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)})`;
+};
+
+const PassiveCompactionEntryTypes = new Set<SessionEntry["type"]>([
+    "custom",
+    "label",
+    "session_info",
+    "model_change",
+    "thinking_level_change",
+]);
+
+/**
+ * Detect whether session activity after the compact turn should cancel the
+ * requested compaction. Non-contextual session state is ignored; entries that
+ * participate in model context, plus unknown future behavior, fail closed.
+ */
+export const didConversationAdvance = (
+    branch: readonly SessionEntry[],
+    compactTurnLeaf: string | null,
+): boolean => {
+    if (!compactTurnLeaf) return true;
+
+    const compactTurnIndex = branch.findIndex((entry) => entry.id === compactTurnLeaf);
+    if (compactTurnIndex === -1) return true;
+
+    return branch
+        .slice(compactTurnIndex + 1)
+        .some((entry) => !PassiveCompactionEntryTypes.has(entry.type));
 };
 
 const resolveTargetId = (sm: SessionManager, target: string): string => {
@@ -392,7 +421,11 @@ export default function (pi: ExtensionAPI) {
         parameters: ContextCompactParams,
         async execute(_id, params: Static<typeof ContextCompactParams>, _signal, _onUpdate, ctx) {
             if (!CommandCtx) {
-                ctx.ui.setEditorText(`/acm ${ctx.ui.getEditorText() || "continue"}`)
+                const editorText = ctx.ui.getEditorText();
+                const followUp = editorText
+                    ? `${AcmEnableFollowUp}\n${editorText}`
+                    : AcmEnableFollowUp;
+                ctx.ui.setEditorText(`/acm ${followUp}`)
                 return {
                     content: [{
                         type: "text",
@@ -418,9 +451,7 @@ export default function (pi: ExtensionAPI) {
 
             const enrichedMessage = `(handoff summary from ${origin})\n${params.summary}`;
 
-            const nid = await sm.branchWithSummary(tid, enrichedMessage);
             CompactParams = params;
-            CompactParams.nid = nid;
             CompactParams.tid = tid;
             CompactParams.enrichedMessage = enrichedMessage;
             CompactParams.usageBeforeText = usageBeforeText;
@@ -436,7 +467,7 @@ export default function (pi: ExtensionAPI) {
         ctx.abort()
     });
 
-    pi.on("agent_end", async () => {
+    pi.on("agent_end", async (_event, ctx) => {
         if (!CompactParams) {
             return
         }
@@ -444,9 +475,11 @@ export default function (pi: ExtensionAPI) {
             return
         }
 
+        const sm = ctx.sessionManager as SessionManager;
         const compactParams = CompactParams;
         const commandCtx = CommandCtx;
         CompactParams = null;
+        const compactTurnLeaf = sm.getLeafId();
 
         // `agent_end` is emitted before the core Agent is actually idle. If we
         // call pi.sendMessage({ triggerTurn: true }) inside this handler, pi still
@@ -456,6 +489,30 @@ export default function (pi: ExtensionAPI) {
         setTimeout(async () => {
             try {
                 await commandCtx.waitForIdle();
+
+                const branch = sm.getBranch();
+                if (didConversationAdvance(branch, compactTurnLeaf)) {
+                    commandCtx.ui.notify("context_compact cancelled: conversation advanced before compaction completed.", "warning");
+                    pi.sendMessage({
+                        customType: PiContextCustomMessageType,
+                        content: [
+                            "context_compact cancelled: conversation advanced before the summary branch was created.",
+                            "No compaction was applied; continue from the current path. If still useful, inspect timeline and retry with an updated summary.",
+                        ].join("\n"),
+                        display: false,
+                    }, {
+                        triggerTurn: true,
+                        deliverAs: "followUp",
+                    });
+                    return;
+                }
+
+                const nid = sm.branchWithSummary(compactParams.tid, compactParams.enrichedMessage);
+                compactParams.nid = nid;
+                // branchWithSummary advances the leaf to the summary entry. Reset
+                // it so navigateTree(nid) can rebuild agent state instead of
+                // returning early as a no-op.
+                sm.branch(compactParams.tid);
                 await commandCtx.navigateTree(compactParams.nid, {
                     summarize: false,
                 });
@@ -469,7 +526,7 @@ export default function (pi: ExtensionAPI) {
                 ].join("\n"), "info");
 
                 pi.sendMessage({
-                    customType: "pi-context",
+                    customType: PiContextCustomMessageType,
                     content: "context_compact complete. A handoff summary of your previous conversation path was injected above. Read it to understand your new state. Execute the Next Step from the summary",
                     display: false,
                 }, {
@@ -477,7 +534,19 @@ export default function (pi: ExtensionAPI) {
                     deliverAs: "followUp",
                 });
             } catch (err) {
-                commandCtx.ui.notify(`context_compact failed to continue: ${err instanceof Error ? err.message : String(err)}`, "error");
+                const message = err instanceof Error ? err.message : String(err);
+                commandCtx.ui.notify(`context_compact failed: ${message}`, "error");
+                pi.sendMessage({
+                    customType: PiContextCustomMessageType,
+                    content: [
+                        `context_compact failed: ${message}`,
+                        "No compaction was applied; continue from the current path. Retry only with a fresh timeline/summary.",
+                    ].join("\n"),
+                    display: false,
+                }, {
+                    triggerTurn: true,
+                    deliverAs: "followUp",
+                });
             }
         }, 0);
     });
