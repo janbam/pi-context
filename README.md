@@ -19,19 +19,35 @@ These tools manage **conversation history**, not repository state. They should n
 
 ## Installation
 
-```bash
-pi install npm:pi-context
+This development version targets the forked Pi APIs in Jan's sibling `pi-mono` checkout and is intentionally not publishable to npm yet. Use this repository layout:
+
+```text
+~/src/pi-mono/
+~/src/pi-extensions/pi-context/
 ```
+
+`pnpm-workspace.yaml` links `@earendil-works/pi-coding-agent` to `../../pi-mono/packages/coding-agent`. Install and run the extension locally:
+
+```bash
+pnpm install
+pi -e ./src/index.ts -e ./src/context.ts --skill ./skills
+```
+
+Remove the package's private marker and restore npm installation instructions only after the required session-state APIs are available in a published Pi version and `peerDependencies` declares that minimum compatible version.
 
 ## Usage
 
 ### For Humans
 
-Run the following command to enable ACM (**A**gentic **C**ontext **M**anagement) for the current session.
+Control ACM (**A**gentic **C**ontext **M**anagement) for the current session:
 
-```bash
-/acm
+```text
+/acm          # Toggle
+/acm enable   # Enable explicitly
+/acm disable  # Disable explicitly
 ```
+
+The effective state is stored outside the conversation tree and survives exit, `pi -c`, `/resume`, `/reload`, and tree navigation. Commands do not become conversation messages. When a command changes the effective state, the next agent turn receives one ephemeral system notification immediately before the real user message. The notification is consumed by that first model call; redundant commands and later calls emit nothing. Repeated state changes before the next turn collapse into one notification containing only the final state.
 
 Open a visual dashboard to inspect context-window usage and token distribution (similar to `claude code /context`).
 
@@ -40,6 +56,16 @@ Open a visual dashboard to inspect context-window usage and token distribution (
 ```
 
 ![](img/context.png)
+
+### Configuration
+
+Create `~/.pi/agent/pi-context.toml` to choose the initial state for new sessions:
+
+```toml
+auto_enable = true
+```
+
+The path follows `PI_CODING_AGENT_DIR` when that pi environment variable is set. The default is `false` when the file is absent. `auto_enable` initializes only new sessions; resumed, reloaded, and derived sessions keep their durable session state. Legacy resumed sessions without saved ACM state initialize as disabled.
 
 ### For Agents
 
