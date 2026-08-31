@@ -19,9 +19,9 @@ Description: An Agentic Context Management extension for the `pi` coding agent. 
 ## COMMANDS
 | Action | Command |
 |--------|---------|
-| Install| `npm install` |
-| Typecheck | `npm run typecheck` |
-| Test   | See `test/test.md` |
+| Install| `pnpm install` |
+| Typecheck | `pnpm typecheck` |
+| Test   | `pnpm test` |
 | Run    | The extension is loaded natively by `pi`. In a `pi` environment, run `pi -e ./src/index.ts -e ./src/context.ts --skill ./skills` to test locally. |
 
 ## CODING STANDARDS
@@ -38,7 +38,8 @@ Description: An Agentic Context Management extension for the `pi` coding agent. 
 ## NOTES
 *   **Architecture**: `pi-context` hooks directly into the `SessionManager` from the `pi-coding-agent` SDK, leveraging its underlying tree structure to implement lossless time travel and conversation-history compaction without deleting nodes from disk.
 *   **Runtime**: The package is source-first. Pi loads the TypeScript extension files declared in `pi.extensions` (`src/index.ts`, `src/context.ts`); no `dist/` build artifact is required for publishing.
-*   **ACM Enablement**: `/acm` stores an `ExtensionCommandContext` required for `context_compact` navigation. `context_checkpoint` can label history directly, but `context_compact` needs command-context navigation support.
+*   **Fork-only development**: `pnpm-workspace.yaml` links `@earendil-works/pi-coding-agent` to the sibling `../../pi-mono/packages/coding-agent` fork because ACM state depends on APIs not yet published to npm. The package remains private until those APIs ship and `peerDependencies` can declare the minimum compatible Pi version.
+*   **ACM State**: `/acm` toggles durable session-global ACM state; `/acm enable` and `/acm disable` set it explicitly. Enabled sessions reacquire the `ExtensionCommandContext` required for `context_compact` navigation on startup/resume. `~/.pi/agent/pi-context.toml` may auto-enable only newly created sessions.
 *   **Compact Semantics**: `context_compact` intentionally interrupts the current agent loop, creates a summarized branch via `SessionManager.branchWithSummary`, navigates to it, then triggers a fresh continuation. Treat compact as a phase-boundary operation, not mid-thought cleanup. Because returning to a backup checkpoint is possible but costly, compact summaries must preserve the compressed working set for the next phase: result, evidence/source anchors, decisions, important changes, open questions, recovery pointer, and next step when relevant.
 *   **Skill Authoring**: Keep skill examples generic and reusable. Do not embed task-specific business data, private session details, concrete IDs, or one-off customer/project examples in `skills/context-management/**`.
 *   **Prompting Principle**: The desired agent behavior is checkpoint before noisy work, timeline when orientation matters, then compact only when a stable result/lesson exists and another phase or task will benefit from a clean summary. Preserve proportionality: checkpoint-only for mild/start states, timeline-first for disorientation, compact for compactable completed phases. Avoid encouraging automatic compact after final answers.

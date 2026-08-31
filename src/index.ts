@@ -12,7 +12,18 @@ import {
     type ImageContent,
     type ToolCall,
 } from "@earendil-works/pi-ai";
-import { formatTokens } from "./utils.js";
+import {
+    AcmContextMessageType,
+    AcmSessionStateKey,
+    createAcmContextMessage,
+    isNewSessionStart,
+    loadAcmConfig,
+    readAcmEnabled,
+    readAcmNotificationPending,
+    resolveAcmAction,
+    type AcmSessionState,
+} from "./acm.js";
+import { formatTokens, wrapSystemNotification } from "./utils.js";
 
 // Define missing types locally as they are not exported from the main entry point
 interface SessionTreeNode {
@@ -23,9 +34,8 @@ interface SessionTreeNode {
 
 const InternalTools = ["context_checkpoint", "context_timeline", "context_compact"];
 const PiContextCustomMessageType = "pi-context";
-const AcmEnableFollowUp = "Agentic context management is now enabled";
-let CommandCtx: ExtensionCommandContext | null = null;
-let CompactParams: any = null;
+/** Private command used only to reacquire session-bound navigation context. */
+const AcmRestoreCommand = "pi-context-restore-acm-command-context";
 
 const isInternal = (name: string) => InternalTools.includes(name);
 
@@ -105,16 +115,134 @@ const ContextCheckpointParams = Type.Object({
     target: Type.Optional(Type.String({ description: "Optional history node ID or checkpoint name to label. Defaults to the current meaningful position near the conversation head." })),
 });
 
+type CompactRequest = Static<typeof ContextCompactParams> & {
+    tid: string;
+    enrichedMessage: string;
+    usageBeforeText: string;
+    nid?: string;
+};
+
 export default function (pi: ExtensionAPI) {
+    if (typeof pi.getSessionState !== "function" || typeof pi.setSessionState !== "function") {
+        throw new Error("pi-context requires a pi version with session-global extension state support");
+    }
+
+    let acmEnabled = false;
+    let commandCtx: ExtensionCommandContext | null = null;
+    let compactRequest: CompactRequest | null = null;
+    let stateNotificationPending = false;
+
+    /** Inject an extension notification through Pi's user-role custom-message boundary. */
+    const sendSystemNotification = (content: string): void => {
+        pi.sendMessage({
+            customType: PiContextCustomMessageType,
+            content: wrapSystemNotification(content),
+            display: false,
+        }, {
+            triggerTurn: true,
+            deliverAs: "followUp",
+        });
+    };
+
+    /** Persist effective state together with any unconsumed transition notification. */
+    const persistAcmState = (): void => {
+        pi.setSessionState(AcmSessionStateKey, {
+            enabled: acmEnabled,
+            ...(stateNotificationPending ? { notificationPending: true } : {}),
+        });
+    };
+
+    /** Return a consistent tool result when session policy disables ACM. */
+    const disabledToolResult = () => ({
+        content: [{
+            type: "text" as const,
+            text: "Agentic context management is disabled for this session. Ask the user to run `/acm enable` before using context tools.",
+        }],
+        details: {},
+    });
+
     pi.registerCommand("acm", {
-        description: "Enable agentic context management for the current session",
+        description: "Toggle ACM or set it explicitly with /acm enable|disable",
         handler: async (args, ctx) => {
-            CommandCtx = ctx;
-            ctx.ui.notify("Agentic Context Management enabled.", "info");
-            if (args) {
-                pi.sendUserMessage(args, { deliverAs: "followUp" });
+            const action = resolveAcmAction(args, acmEnabled);
+            if (!action) {
+                ctx.ui.notify("Usage: /acm [enable|disable]", "warning");
+                return;
+            }
+
+            // A command context is session-bound; retain it only while ACM is enabled.
+            const nextEnabled = action === "enable";
+            const stateChanged = nextEnabled !== acmEnabled;
+            acmEnabled = nextEnabled;
+            commandCtx = nextEnabled ? ctx : null;
+            if (!nextEnabled) compactRequest = null;
+
+            // Collapse effective changes into one durable final-state notice for the next model call.
+            if (stateChanged) {
+                stateNotificationPending = true;
+                persistAcmState();
+            }
+            ctx.ui.notify(`Agentic Context Management ${acmEnabled ? "enabled" : "disabled"}.`, "info");
+        },
+    });
+
+    pi.registerCommand(AcmRestoreCommand, {
+        description: "Restore pi-context's internal session-bound command context",
+        handler: async (_args, ctx) => {
+            if (acmEnabled) commandCtx = ctx;
+        },
+    });
+
+    pi.on("session_start", (event, ctx) => {
+        // Never carry command or pending-compaction handles across session boundaries.
+        commandCtx = null;
+        compactRequest = null;
+
+        const persistedState = ctx.sessionManager.getSessionState<AcmSessionState>(AcmSessionStateKey);
+        const persistedEnabled = readAcmEnabled(persistedState);
+        if (persistedEnabled !== undefined) {
+            acmEnabled = persistedEnabled;
+            stateNotificationPending = readAcmNotificationPending(persistedState);
+        } else {
+            // Configuration initializes only new sessions; resumed legacy sessions default off.
+            acmEnabled = isNewSessionStart(event.reason, ctx.sessionManager.getEntries())
+                ? loadAcmConfig().autoEnable
+                : false;
+            stateNotificationPending = false;
+            persistAcmState();
+        }
+
+        if (acmEnabled) {
+            // A private command avoids collisions with public `/acm` registrations.
+            pi.sendUserMessage(`/${AcmRestoreCommand}`, { expandPromptTemplates: true });
+        }
+    });
+
+    pi.on("session_shutdown", () => {
+        // Invalidate deferred navigation work before Pi tears down this extension runtime.
+        commandCtx = null;
+        compactRequest = null;
+    });
+
+    pi.on("context", (event) => {
+        // Remove stale projections defensively without emitting on ordinary model calls.
+        const messages = event.messages.filter(
+            (message) => !(message.role === "custom" && message.customType === AcmContextMessageType),
+        );
+        if (!stateNotificationPending) return { messages };
+
+        // Place the one-shot state notice beside the latest real prompt it qualifies.
+        let insertionIndex = messages.length;
+        for (let index = messages.length - 1; index >= 0; index--) {
+            if (messages[index].role === "user") {
+                insertionIndex = index;
+                break;
             }
         }
+        messages.splice(insertionIndex, 0, createAcmContextMessage(acmEnabled, true));
+        stateNotificationPending = false;
+        persistAcmState();
+        return { messages };
     });
 
     // Helper: Check if a checkpoint name already exists in the tree
@@ -140,6 +268,8 @@ export default function (pi: ExtensionAPI) {
         description: ContextCheckpointDescription,
         parameters: ContextCheckpointParams,
         async execute(_id, params: Static<typeof ContextCheckpointParams>, _signal, _onUpdate, ctx) {
+            if (!acmEnabled) return disabledToolResult();
+
             const sm = ctx.sessionManager as SessionManager;
 
             // Deduplication check: ensure checkpoint name is unique
@@ -208,6 +338,8 @@ export default function (pi: ExtensionAPI) {
         description: ContextTimelineDescription,
         parameters: ContextTimelineParams,
         async execute(_id, params: Static<typeof ContextTimelineParams>, _signal, _onUpdate, ctx) {
+            if (!acmEnabled) return disabledToolResult();
+
             const sm = ctx.sessionManager as SessionManager;
             const branch = sm.getBranch();
             const currentLeafId = sm.getLeafId();
@@ -420,20 +552,17 @@ export default function (pi: ExtensionAPI) {
         description: ContextCompactDescription,
         parameters: ContextCompactParams,
         async execute(_id, params: Static<typeof ContextCompactParams>, _signal, _onUpdate, ctx) {
-            if (!CommandCtx) {
-                const editorText = ctx.ui.getEditorText();
-                const followUp = editorText
-                    ? `${AcmEnableFollowUp}\n${editorText}`
-                    : AcmEnableFollowUp;
-                ctx.ui.setEditorText(`/acm ${followUp}`)
+            if (!acmEnabled) return disabledToolResult();
+            if (!commandCtx) {
                 return {
                     content: [{
                         type: "text",
-                        text: "Agentic context management is not enabled. Ask the user to run `/acm` in the pi to enable it, then retry."
+                        text: "ACM is enabled, but its interactive session context is unavailable. Ask the user to run `/acm enable`, then retry.",
                     }],
-                    details: {}
+                    details: {},
                 };
             }
+
             const sm = ctx.sessionManager as SessionManager;
             const usageBeforeText = formatContextUsage(ctx.getContextUsage());
 
@@ -451,102 +580,84 @@ export default function (pi: ExtensionAPI) {
 
             const enrichedMessage = `(handoff summary from ${origin})\n${params.summary}`;
 
-            CompactParams = params;
-            CompactParams.tid = tid;
-            CompactParams.enrichedMessage = enrichedMessage;
-            CompactParams.usageBeforeText = usageBeforeText;
+            compactRequest = {
+                ...params,
+                tid,
+                enrichedMessage,
+                usageBeforeText,
+            };
 
             return { content: [{ type: "text", text: "compact start" }], details: {} };
         },
     });
 
     pi.on("turn_end", async (_event, ctx) => {
-        if (!CompactParams) {
-            return
-        }
-        ctx.abort()
+        if (!compactRequest) return;
+        ctx.abort();
     });
 
     pi.on("agent_end", async (_event, ctx) => {
-        if (!CompactParams) {
-            return
-        }
-        if (!CommandCtx) {
-            return
-        }
+        if (!compactRequest || !commandCtx) return;
 
         const sm = ctx.sessionManager as SessionManager;
-        const compactParams = CompactParams;
-        const commandCtx = CommandCtx;
-        CompactParams = null;
+        const requestedCompaction = compactRequest;
+        const activeCommandCtx = commandCtx;
+        compactRequest = null;
         const compactTurnLeaf = sm.getLeafId();
 
         // `agent_end` is emitted before the core Agent is actually idle. If we
-        // call pi.sendMessage({ triggerTurn: true }) inside this handler, pi still
-        // sees an active stream and queues the message as steering; after
+        // trigger a system notification inside this handler, pi still sees an
+        // active stream and queues the message as steering; after
         // `agent_end` the loop has already stopped, so that queued message is not
         // drained. Defer navigation + continuation until the current run settles.
         setTimeout(async () => {
             try {
-                await commandCtx.waitForIdle();
+                await activeCommandCtx.waitForIdle();
+
+                // Disabling ACM or replacing the session invalidates this deferred request.
+                if (!acmEnabled || commandCtx !== activeCommandCtx) return;
 
                 const branch = sm.getBranch();
                 if (didConversationAdvance(branch, compactTurnLeaf)) {
-                    commandCtx.ui.notify("context_compact cancelled: conversation advanced before compaction completed.", "warning");
-                    pi.sendMessage({
-                        customType: PiContextCustomMessageType,
-                        content: [
-                            "context_compact cancelled: conversation advanced before the summary branch was created.",
-                            "No compaction was applied; continue from the current path. If still useful, inspect timeline and retry with an updated summary.",
-                        ].join("\n"),
-                        display: false,
-                    }, {
-                        triggerTurn: true,
-                        deliverAs: "followUp",
-                    });
+                    activeCommandCtx.ui.notify("context_compact cancelled: conversation advanced before compaction completed.", "warning");
+                    sendSystemNotification([
+                        "context_compact cancelled: conversation advanced before the summary branch was created.",
+                        "No compaction was applied; continue from the current path. If still useful, inspect timeline and retry with an updated summary.",
+                    ].join("\n"));
                     return;
                 }
 
-                const nid = sm.branchWithSummary(compactParams.tid, compactParams.enrichedMessage);
-                compactParams.nid = nid;
+                const nid = sm.branchWithSummary(requestedCompaction.tid, requestedCompaction.enrichedMessage);
+                requestedCompaction.nid = nid;
                 // branchWithSummary advances the leaf to the summary entry. Reset
                 // it so navigateTree(nid) can rebuild agent state instead of
                 // returning early as a no-op.
-                sm.branch(compactParams.tid);
-                await commandCtx.navigateTree(compactParams.nid, {
+                sm.branch(requestedCompaction.tid);
+                await activeCommandCtx.navigateTree(requestedCompaction.nid, {
                     summarize: false,
                 });
 
-                const usageAfter = commandCtx.getContextUsage();
-                commandCtx.ui.notify([
-                    `Compacted to ${compactParams.target}${compactParams.target === compactParams.tid ? "" : `(${compactParams.tid})`}`,
-                    `Context Usage: ${compactParams.usageBeforeText} -> ${formatContextUsage(usageAfter)}`,
-                    `Backup checkpoint created: ${compactParams.backupCheckpoint || "none"}`,
-                    `Summary: ${compactParams.enrichedMessage}`,
+                const usageAfter = activeCommandCtx.getContextUsage();
+                activeCommandCtx.ui.notify([
+                    `Compacted to ${requestedCompaction.target}${requestedCompaction.target === requestedCompaction.tid ? "" : `(${requestedCompaction.tid})`}`,
+                    `Context Usage: ${requestedCompaction.usageBeforeText} -> ${formatContextUsage(usageAfter)}`,
+                    `Backup checkpoint created: ${requestedCompaction.backupCheckpoint || "none"}`,
+                    `Summary: ${requestedCompaction.enrichedMessage}`,
                 ].join("\n"), "info");
 
-                pi.sendMessage({
-                    customType: PiContextCustomMessageType,
-                    content: "context_compact complete. A handoff summary of your previous conversation path was injected above. Read it to understand your new state. Execute the Next Step from the summary",
-                    display: false,
-                }, {
-                    triggerTurn: true,
-                    deliverAs: "followUp",
-                });
+                sendSystemNotification(
+                    "context_compact complete. A handoff summary of your previous conversation path was injected above. Read it to understand your new state. Execute the Next Step from the summary",
+                );
             } catch (err) {
+                // A replaced session owns neither this failure notification nor its follow-up.
+                if (commandCtx !== activeCommandCtx) return;
+
                 const message = err instanceof Error ? err.message : String(err);
-                commandCtx.ui.notify(`context_compact failed: ${message}`, "error");
-                pi.sendMessage({
-                    customType: PiContextCustomMessageType,
-                    content: [
-                        `context_compact failed: ${message}`,
-                        "No compaction was applied; continue from the current path. Retry only with a fresh timeline/summary.",
-                    ].join("\n"),
-                    display: false,
-                }, {
-                    triggerTurn: true,
-                    deliverAs: "followUp",
-                });
+                activeCommandCtx.ui.notify(`context_compact failed: ${message}`, "error");
+                sendSystemNotification([
+                    `context_compact failed: ${message}`,
+                    "No compaction was applied; continue from the current path. Retry only with a fresh timeline/summary.",
+                ].join("\n"));
             }
         }, 0);
     });

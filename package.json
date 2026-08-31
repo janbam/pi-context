@@ -1,6 +1,7 @@
 {
   "name": "pi-context",
   "version": "2.1.2",
+  "private": true,
   "description": "Agentic Context Management for Pi",
   "files": [
     "src",
@@ -9,7 +10,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck && rm -rf dist && tsc --declaration false && node --test test/*.test.mjs"
+    "test": "pnpm run typecheck && rm -rf dist && tsc --declaration false && node --test test/*.test.mjs"
   },
   "keywords": [
     "pi-agent",
@@ -22,6 +23,7 @@
     "pi-skill"
   ],
   "type": "module",
+  "packageManager": "pnpm@10.12.4",
   "author": "ttttmr",
   "license": "MIT",
   "devDependencies": {

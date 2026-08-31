@@ -13,6 +13,10 @@ Core rhythm:
 - **review timeline when structure affects the next decision**
 - **compact when a state summary is a better working set than the raw trail**
 
+## Runtime availability
+
+When an ACM command changes the effective session state, one model-only system notification reports the final state immediately before the next real user message. The notification is consumed by that first model call; redundant commands and later calls emit nothing. When ACM is disabled, do not call the context tools or ask the user to enable them unless context management is materially useful for the current task. `/acm`, `/acm enable`, and `/acm disable` change the durable session-wide state, and repeated state changes before the next turn collapse into one notification containing only the final effective state.
+
 Use only these tools:
 
 - `context_checkpoint`
