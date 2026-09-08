@@ -100,6 +100,8 @@ Read **one primary reference** only when the scenario pattern will affect tool t
 
 Also read `references/retry-branch-and-pivot.md` when multiple approaches, failed branches, comparisons, retries, or pivots become central.
 
+Also read `references/orca-pi-launch.md` when spawning a pi agent through Orca, or when an Orca-managed pi session still needs `/acm` before compact.
+
 ## Tool policy
 
 ### `context_checkpoint`
