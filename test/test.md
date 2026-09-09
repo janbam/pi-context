@@ -13,6 +13,22 @@ Strictly follow the steps below.
 6. Output "Success" if the guess is correct; otherwise, output "Failure".
 ```
 
+## Live command-context validation
+
+Run the opt-in real-model test (uses existing Pi authentication and consumes tokens):
+
+```bash
+npm run test:live
+# Optional model override:
+PI_CONTEXT_TEST_MODEL=openai-codex/gpt-5.6-luna npm run test:live
+```
+
+The default is `openai-codex/gpt-5.6-luna` with low thinking. The runner launches isolated Pi RPC processes using the locally installed Pi package and current source extension; it disables other extensions, skills, context files, and built-in tools. It does not change global configuration.
+
+Four phases check first-time acquisition, reuse in the same process, reacquisition after restarting with the saved session, and cancellation when a contextual message is flushed after `turn_end` but before `agent_end`. A passive test probe records actual `/acm` handler invocations without replacing command context or navigation. Assertions check summary ancestry, exact model continuation, dispatch counts, absence of orphan tool results, and absence of internal commands in user history or editor mutations. The cancellation phase must create no summary branch and retain the late contextual message on the active path. Advancement is measured from the assistant message containing the compact call; passive entries, that call's successful tool result, and an empty abort boundary do not cancel compaction.
+
+Session files, raw RPC events, stderr, and per-phase verified results are saved under the temporary artifact directory printed at startup. The existing deliberate abort boundary may appear as an empty Codex `This operation was aborted` error before continuation; errors after continuation remain failures. This exercises real RPC and model behavior, not TUI rendering. It is excluded from `npm test`.
+
 ## Compaction advancement regression
 
 Launch Pi with the passive-entry fixture:
@@ -21,7 +37,9 @@ Launch Pi with the passive-entry fixture:
 pi --no-skills --no-extensions -e ./src/index.ts -e ./src/context.ts -e ./test/passive-custom-extension.ts
 ```
 
-1. Enable ACM with `/acm` and ask the agent to checkpoint, inspect the timeline, and call `context_compact`.
+1. Without running `/acm`, ask the agent to checkpoint, inspect the timeline, and call `context_compact`. Confirm automatic command-context acquisition succeeds without changing the editor or injecting `/acm` into model history.
 2. Confirm that label, session-info, and non-contextual custom entries appended while `waitForIdle()` settles do not cancel compaction.
 3. Repeat while submitting a real user steering message before compaction settles; confirm that any message entry cancels compaction exactly once and creates no summary branch.
 4. Confirm that the next model request contains no orphaned tool result.
+5. Resume the session in a new process or run `/reload`, then compact again without manual enablement.
+6. Verify `/acm <task>` still submits the task and manual `/acm` remains usable.

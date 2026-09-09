@@ -27,11 +27,9 @@ pi install npm:pi-context
 
 ### For Humans
 
-Run the following command to enable ACM (**A**gentic **C**ontext **M**anagement) for the current session.
+ACM (**A**gentic **C**ontext **M**anagement) works automatically with Pi >= 0.84.2. Before compacting, the extension acquires command context if needed; no manual `/acm` is required.
 
-```bash
-/acm
-```
+`/acm` and `/acm <task>` remain available for compatibility.
 
 Open a visual dashboard to inspect context-window usage and token distribution (similar to `claude code /context`).
 
@@ -53,7 +51,3 @@ This extension adds the `context-management` skill, which guides agents to keep 
 
 3. **⏪ Compact (`context_compact`)**
    Create a summarized continuation branch from an earlier checkpoint, history node, or `root`. The summary should restore the useful state after the target: current task, decisions, external side effects such as changed files or remote updates, validation state, source anchors, and the explicit next step.
-
-### Orca
-
-When launching pi from Orca, prefix the **submitted** prompt with `/acm ` so compact can navigate. Draft/prefill is not enough. See [`skills/context-management/references/orca-pi-launch.md`](skills/context-management/references/orca-pi-launch.md).

@@ -23,9 +23,6 @@ interface SessionTreeNode {
 
 const InternalTools = ["context_checkpoint", "context_timeline", "context_compact"];
 const PiContextCustomMessageType = "pi-context";
-const AcmEnableFollowUp = "Agentic context management is now enabled";
-let CommandCtx: ExtensionCommandContext | null = null;
-let CompactParams: any = null;
 
 const isInternal = (name: string) => InternalTools.includes(name);
 
@@ -47,22 +44,32 @@ const PassiveCompactionEntryTypes = new Set<SessionEntry["type"]>([
 ]);
 
 /**
- * Detect whether session activity after the compact turn should cancel the
- * requested compaction. Non-contextual session state is ignored; entries that
- * participate in model context, plus unknown future behavior, fail closed.
+ * Detect conversation advancement since the compact request, not agent_end.
+ * Only passive entries, this tool's successful result, and an empty abort
+ * boundary are safe to omit from the already-written handoff summary.
  */
 export const didConversationAdvance = (
     branch: readonly SessionEntry[],
-    compactTurnLeaf: string | null,
+    requestLeaf: string | null,
+    compactToolCallId?: string,
 ): boolean => {
-    if (!compactTurnLeaf) return true;
+    if (!requestLeaf) return true;
 
-    const compactTurnIndex = branch.findIndex((entry) => entry.id === compactTurnLeaf);
-    if (compactTurnIndex === -1) return true;
+    const requestIndex = branch.findIndex((entry) => entry.id === requestLeaf);
+    if (requestIndex === -1) return true;
 
-    return branch
-        .slice(compactTurnIndex + 1)
-        .some((entry) => !PassiveCompactionEntryTypes.has(entry.type));
+    return branch.slice(requestIndex + 1).some((entry) => {
+        if (PassiveCompactionEntryTypes.has(entry.type)) return false;
+        if (compactToolCallId && entry.type === "message") {
+            const message = entry.message;
+            if (message.role === "toolResult" && message.toolName === "context_compact" &&
+                message.toolCallId === compactToolCallId && !message.isError) return false;
+            if (message.role === "assistant" && message.content.length === 0 &&
+                (message.stopReason === "aborted" ||
+                    (message.stopReason === "error" && message.errorMessage === "This operation was aborted"))) return false;
+        }
+        return true;
+    });
 };
 
 const resolveTargetId = (sm: SessionManager, target: string): string => {
@@ -106,11 +113,57 @@ const ContextCheckpointParams = Type.Object({
 });
 
 export default function (pi: ExtensionAPI) {
+    let CommandCtx: ExtensionCommandContext | null = null;
+    let CompactParams: any = null;
+    let runtimeActive = true;
+    let pendingCommandContext: Promise<ExtensionCommandContext> | null = null;
+    let resolveCommandContext: ((ctx: ExtensionCommandContext) => void) | undefined;
+    let rejectCommandContext: ((error: Error) => void) | undefined;
+
+    // sendUserMessage is fire-and-forget. Resolve from the command handler,
+    // rather than assuming command dispatch has completed when it returns.
+    async function ensureCommandContext(): Promise<ExtensionCommandContext> {
+        if (CommandCtx) return CommandCtx;
+        if (pendingCommandContext) return pendingCommandContext;
+
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        pendingCommandContext = new Promise<ExtensionCommandContext>((resolve, reject) => {
+            resolveCommandContext = resolve;
+            rejectCommandContext = reject;
+            timeout = setTimeout(() => reject(new Error(
+                "context_compact: automatic command context acquisition timed out. Requires Pi >= 0.84.2 with extension command dispatch support.",
+            )), 5000);
+            pi.sendUserMessage("/acm", {
+                deliverAs: "followUp",
+                expandPromptTemplates: true,
+            });
+        });
+        try {
+            return await pendingCommandContext;
+        } finally {
+            clearTimeout(timeout);
+            pendingCommandContext = null;
+            resolveCommandContext = undefined;
+            rejectCommandContext = undefined;
+        }
+    }
+
+    pi.on("session_shutdown", () => {
+        runtimeActive = false;
+        CommandCtx = null;
+        CompactParams = null;
+        rejectCommandContext?.(new Error("context_compact: session closed while acquiring command context."));
+    });
+
     pi.registerCommand("acm", {
         description: "Enable agentic context management for the current session",
         handler: async (args, ctx) => {
             CommandCtx = ctx;
-            ctx.ui.notify("Agentic Context Management enabled.", "info");
+            if (resolveCommandContext) {
+                resolveCommandContext(ctx);
+            } else {
+                ctx.ui.notify("Agentic Context Management enabled.", "info");
+            }
             if (args) {
                 pi.sendUserMessage(args, { deliverAs: "followUp" });
             }
@@ -420,19 +473,18 @@ export default function (pi: ExtensionAPI) {
         description: ContextCompactDescription,
         parameters: ContextCompactParams,
         async execute(_id, params: Static<typeof ContextCompactParams>, _signal, _onUpdate, ctx) {
-            if (!CommandCtx) {
-                const editorText = ctx.ui.getEditorText();
-                const followUp = editorText
-                    ? `${AcmEnableFollowUp}\n${editorText}`
-                    : AcmEnableFollowUp;
-                ctx.ui.setEditorText(`/acm ${followUp}`)
-                return {
-                    content: [{
-                        type: "text",
-                        text: "Agentic context management is not enabled. Ask the user to run `/acm` in the pi to enable it, then retry."
-                    }],
-                    details: {}
-                };
+            // Anchor at the assistant message containing this summary, not the
+            // current leaf: sibling tools/hooks may already have appended entries.
+            const requestLeaf = [...ctx.sessionManager.getBranch()].reverse().find((entry) =>
+                entry.type === "message" && entry.message.role === "assistant" &&
+                entry.message.content.some((block) => block.type === "toolCall" && block.id === _id),
+            )?.id;
+            if (!requestLeaf) {
+                throw new Error("context_compact: cannot locate the requesting tool call in session history.");
+            }
+            await ensureCommandContext();
+            if (!runtimeActive || _signal?.aborted) {
+                throw new Error("context_compact: cancelled before compaction started.");
             }
             const sm = ctx.sessionManager as SessionManager;
             const usageBeforeText = formatContextUsage(ctx.getContextUsage());
@@ -455,6 +507,8 @@ export default function (pi: ExtensionAPI) {
             CompactParams.tid = tid;
             CompactParams.enrichedMessage = enrichedMessage;
             CompactParams.usageBeforeText = usageBeforeText;
+            CompactParams.requestLeaf = requestLeaf;
+            CompactParams.toolCallId = _id;
 
             return { content: [{ type: "text", text: "compact start" }], details: {} };
         },
@@ -479,7 +533,7 @@ export default function (pi: ExtensionAPI) {
         const compactParams = CompactParams;
         const commandCtx = CommandCtx;
         CompactParams = null;
-        const compactTurnLeaf = sm.getLeafId();
+        const requestLeaf = compactParams.requestLeaf;
 
         // `agent_end` is emitted before the core Agent is actually idle. If we
         // call pi.sendMessage({ triggerTurn: true }) inside this handler, pi still
@@ -488,10 +542,12 @@ export default function (pi: ExtensionAPI) {
         // drained. Defer navigation + continuation until the current run settles.
         setTimeout(async () => {
             try {
+                if (!runtimeActive) return;
                 await commandCtx.waitForIdle();
+                if (!runtimeActive) return;
 
                 const branch = sm.getBranch();
-                if (didConversationAdvance(branch, compactTurnLeaf)) {
+                if (didConversationAdvance(branch, requestLeaf, compactParams.toolCallId)) {
                     commandCtx.ui.notify("context_compact cancelled: conversation advanced before compaction completed.", "warning");
                     pi.sendMessage({
                         customType: PiContextCustomMessageType,
@@ -534,6 +590,7 @@ export default function (pi: ExtensionAPI) {
                     deliverAs: "followUp",
                 });
             } catch (err) {
+                if (!runtimeActive) return;
                 const message = err instanceof Error ? err.message : String(err);
                 commandCtx.ui.notify(`context_compact failed: ${message}`, "error");
                 pi.sendMessage({
