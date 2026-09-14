@@ -35,10 +35,10 @@ The mistake to avoid is carrying every front raw at once.
 ## Working pattern
 
 1. Identify the active front before each substantial reply or tool call.
-2. If another front is still pending, keep it as a small state capsule rather than raw history.
+2. If another front is still pending, represent it as a small state capsule unless its raw details will be needed again soon.
 3. When a result returns, capture it into the relevant front before responding.
 4. If the returned result does not become the active front immediately, park it as state and preserve the user's current focus.
-5. Before switching fronts, compact if the old front's raw process is now stale and the next front can continue from a summary.
+5. Before switching fronts, apply the main skill's compact gate, including the cost of restoring any front that will resume soon.
 6. If several fronts are tangled, run `context_timeline` to find the clean anchor and separate active, parked, completed, and stale paths.
 
 ## What to record per parked front
@@ -71,17 +71,17 @@ Compact when interleaving has made raw context a worse working set:
 - the next action belongs to a different front than the recent raw history
 - the active front started much earlier, and the middle of the thread is mostly completed or unrelated fronts
 
-Do **not** compact just because async work exists. Compact when a front can safely be represented as state while another front becomes active.
+Do **not** compact just because async work exists, a reviewer was dispatched, or the next action is waiting. If feedback will use the same recent patch or logs, usually retain that raw front. A long stretch of stale monitoring output can still be worth replacing with state; apply the main skill's compact gate rather than treating all waits as either triggers or prohibitions.
 
 ## Choosing how far back to compact
 
-Interleaved work often makes recent anchors poor targets: they may preserve the completed fronts that happened after the active front was launched. Be willing to compact aggressively when the summary can restore state.
+Interleaved work can make recent anchors poor targets: they may preserve completed fronts while dropping recent useful material. Inspect what each target actually replaces, and weigh restoration costs before choosing an older anchor.
 
 A compact to an old anchor or even `root` is appropriate when:
 
 - the active front can be described by a concise capsule
 - completed fronts between the anchor and now no longer need raw context
-- important details are recoverable from reliable source pointers
+- important details are recoverable from reliable source pointers without rebuilding most of the current working set
 - the next action does not require inspecting the interleaved raw discussion
 - you can name what remains active, what is parked, and what is done
 
@@ -104,7 +104,7 @@ When a delayed result appears in the middle of another thread:
 1. **Capture:** identify which front it belongs to and summarize its result.
 2. **Classify:** progress, stable completion, failure, decision needed, or noise.
 3. **Choose focus:** decide whether this result should interrupt the current active front. If not, park it.
-4. **Compact if needed:** if switching to it or away from it would drag stale logs/retries forward, compact first.
+4. **Evaluate cleanup:** compact only if removing stale logs/retries passes the main skill's gate; otherwise keep working.
 5. **Continue:** resume the chosen active front from a clean working set.
 
 ## Example capsules
@@ -139,5 +139,5 @@ Avoid:
 - letting a returned result overwrite the user's current active request without deciding focus
 - reporting status repeatedly while the real problem is that fronts are not summarized
 - compacting away a front without preserving how to resume it
-- avoiding a deep compact even though source pointers and capsules can restore the active state
+- avoiding a deep compact when source pointers and capsules can restore the active state cheaply enough to make cleanup worthwhile
 - resuming from memory when a small front capsule would be safer

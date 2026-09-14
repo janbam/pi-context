@@ -17,12 +17,12 @@ This reference is for **input-heavy work where the process is much larger than t
 1. Create a checkpoint before a large search or reading loop.
 2. Search, browse, read, inspect, and follow leads normally.
 3. If you lose orientation, review the timeline.
-4. Once the investigation yields a stable finding and there is another step to take, compact to the anchor that gives the next step a focused working set.
-5. Continue with the conclusion, recommendation, or next action instead of carrying the entire raw exploration forward. If the finding is the final answer to the user's current request, answer first and wait; compact on the next user message if it starts new work.
+4. Once the investigation yields a stable finding and there is another step to take, evaluate the main skill's compact gate: what raw evidence is still needed, what stale trail would be removed, and would cleanup help after recovery costs?
+5. Continue with the conclusion, recommendation, or next action instead of carrying the entire raw exploration forward. If the finding is the final answer to the user's current request, answer first and wait; evaluate the compact gate on the next user message if it starts new work.
 
-Do not stop at "I already made a checkpoint" if the investigation phase is complete and the conversation is continuing. The cleanup move for completed research is usually a compact to the anchor that preserves only the raw context the next step still needs.
+Checkpoint-only is appropriate when the loaded evidence is still the best working set. Compact when the search trail has become low-value and its findings can support the continuation without costly reconstruction.
 
-**Important:** “another step” includes the next phase of the same request. If you searched to find the right data source, previous task record, API shape, rule id, or query pattern, then the next execution step (running the real query/export, implementing, validating, etc.) is an immediate continuation. Compact before that execution step, not only before a future user message.
+**Important:** “another step” includes the next phase of the same request, but does not automatically justify compaction. Locating an API and then editing its caller may require the exact contract just read. By contrast, replacing many rejected searches with a stable source pointer and a known command can make a long, low-overlap execution phase cheaper to start.
 
 ## When to checkpoint
 
@@ -55,7 +55,7 @@ Compact after the investigation produces one of these and there is a continuatio
 - a shortlist of viable next actions
 - a located data source, old conversation, schema, rule id, query/API pattern, or other fact that unlocks execution
 
-If you already have one of these, the investigation phase is usually complete enough to compact. If the next step is to use the finding in another tool call, compact first. If there is no continuation yet because you are about to give the final answer, wait until the next user message before deciding.
+These findings make the investigation stable enough to evaluate, not automatically worth compacting. If the next step will compare, quote, or edit the same raw material, keep it available; a single remaining lookup may also be cheaper without a context transition. If there is no continuation yet because you are about to give the final answer, wait until the next user message before deciding.
 
 Do not compact in the middle of a still-open search loop just because the thread feels busy.
 
@@ -82,7 +82,7 @@ context_checkpoint({ name: "timeout-investigation-start" });
 
 // ... search logs, read code, compare docs, inspect outputs ...
 
-// Stable finding found and the next action is execution/validation, so compact before continuing.
+// Rejected searches are now cold; mitigation planning needs only the findings below.
 context_timeline();
 
 context_compact({

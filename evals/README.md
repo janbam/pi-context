@@ -76,15 +76,16 @@ Files:
 Purpose:
 - test behaviors that only appear across turns
 - verify that the agent does **not** compact immediately after finishing a noisy task when the next user message is only a follow-up or correction
-- verify that the agent **does** compact before starting a clearly different new task after a completed noisy task
-- verify that same-task next-phase transitions can still compact when cleanup is actually useful
+- verify that short new tasks and shared raw working sets do **not** trigger compaction merely at a boundary
+- verify that substantial cold trails can still be compacted when cleanup benefits the continuation after recovery costs
+- distinguish autonomous decisions from explicit user requests, and review business outputs alongside tool traces
 
 ## Current skill hypothesis
 
 The skill is designed to teach this working rhythm:
-- checkpoint early and often
+- checkpoint before noisy work and at meaningful milestones
 - review timeline when orientation matters
-- compact only when a phase is ready to compact
+- compact only when the known continuation benefits after recovery costs
 
 The skill is **not** centered on file-backed durable state.
 
@@ -106,10 +107,10 @@ The agent should usually:
 The agent should show proportionality:
 - **checkpoint-first** for large work just starting or interruption-prone work
 - **timeline-first** when the main problem is disorientation or stale history
-- **compact** when a noisy phase already produced a stable takeaway
+- **compact** when a stable takeaway can replace a substantial stale trail and the known continuation benefits after recovery costs
 - **no premature compact** when the thread is only mildly cluttered
 
-For this skill, the most important behavioral question is not just whether it triggers, but whether it eventually performs `context_compact` in the right cases after establishing reasonable checkpoints.
+For this skill, the key question is whether the chosen working set helps the next work: checkpoint-only can be correct, and compact calls must remove actual stale history without costly reconstruction. See the multi-turn notes for business-output oracles and runner scoring limits.
 
 ## Suggested run matrix
 

@@ -451,15 +451,10 @@ export default function (pi: ExtensionAPI) {
                 stepsSinceCheckpoint++;
             }
 
-            const compactCue = nearestCheckpointName === "None"
-                ? "create a checkpoint before the next noisy phase"
-                : `if this segment has produced a stable result and another phase remains, compact to '${nearestCheckpointName}' with a handoff summary before continuing`;
-
             const hud = [
                 `[Context Dashboard]`,
                 `• Context Usage:    ${usageStr}`,
                 `• Segment Size:     ${stepsSinceCheckpoint} steps since last checkpoint '${nearestCheckpointName}'`,
-                `• Compact Cue:      ${compactCue}`,
                 `---------------------------------------------------`
             ].join("\n");
 

@@ -14,7 +14,7 @@ This is a **cross-cutting pattern reference**. Read it alongside a primary refer
 1. Checkpoint before opening a risky branch or alternative path.
 2. Explore or implement that branch.
 3. If anchor choice becomes unclear, inspect timeline.
-4. Once the branch produces a stable lesson, decision, or dead-end, compact to the anchor that removes branch noise while preserving the state needed for the next attempt.
+4. Once the branch produces a stable lesson, decision, or dead-end, apply the main skill's compact gate. A different approach may benefit from a short lesson instead of the failed trail; repairing the same code or explaining the same error often still needs raw details.
 5. Continue with the next branch or the chosen direction from that focused state.
 
 ## When to review timeline
@@ -27,7 +27,7 @@ Run `context_timeline` when:
 
 ## When to compact
 
-Compact when:
+Consider compaction under the main skill's gate when:
 - a branch clearly failed
 - a comparison is complete and one option won
 - the direction changed enough that the old path is now baggage
@@ -52,7 +52,7 @@ Examples:
 
 In these cases:
 - summarize what still matters
-- compact to the anchor that removes the stale branch while preserving current task state
+- compact if the chosen anchor removes enough stale history to justify restoring the next approach's working set
 - continue under the new direction
 
 ## Example rhythm
@@ -60,7 +60,7 @@ In these cases:
 ```javascript
 context_checkpoint({ name: "oauth-fix-start" });
 
-// ... try cookie-based approach ...
+// ... try cookie-based approach; extensive rejected traces are now cold ...
 
 context_compact({
   target: "oauth-fix-start",
