@@ -12,7 +12,7 @@ Description: An Agentic Context Management extension for the `pi` coding agent. 
 *   `src/`: TypeScript source code for the extension.
     *   `index.ts`: Tool and command registrations (`acm`, `context_checkpoint`, `context_timeline`, `context_compact`).
     *   `context.ts`: CLI command registrations (e.g., `/context` for TUI visualization).
-    *   `utils.ts`: Shared utility functions and type definitions.
+    *   `utils.ts`: Shared utility functions and type definitions (checkpoint phase parsing, timeline interval token estimates).
 *   `skills/`: Pi skills documentation, containing `context-management/SKILL.md` which instructs the LLM on how to use the context tools.
 *   `test/`: Markdown test scenarios.
 
@@ -21,7 +21,7 @@ Description: An Agentic Context Management extension for the `pi` coding agent. 
 |--------|---------|
 | Install| `npm install` |
 | Typecheck | `npm run typecheck` |
-| Test   | See `test/test.md` |
+| Test   | `npm test` (typecheck and unit tests); see `test/test.md` |
 | Run    | The extension is loaded natively by `pi`. In a `pi` environment, run `pi -e ./src/index.ts -e ./src/context.ts --skill ./skills` to test locally. |
 
 ## CODING STANDARDS
@@ -36,6 +36,8 @@ Description: An Agentic Context Management extension for the `pi` coding agent. 
 *   **Scenario References**: `skills/context-management/references/` contains focused guidance for research, development/debugging, planning, repeated-item work, task switching, and retry/pivot workflows.
 
 ## NOTES
+*   **Checkpoint Naming**: The skill documents `<scope>-<phase>` suffixes (`start/done/pivot/pause/resume`) as an agent-facing convention; the extension only parses the suffix for timeline display and does not track phase state. Timeline interval estimates use Pi's token heuristic, describe historical content (excluding internal context-management traffic), and are not reclaimable tokens; never recommend the nearest checkpoint as a compact target.
+*   **Native Compaction**: Leave Pi's manual, threshold and overflow compaction untouched. No `session_before_compact` interception or replacement prompts.
 *   **Architecture**: `pi-context` hooks directly into the `SessionManager` from the `pi-coding-agent` SDK, leveraging its underlying tree structure to implement lossless time travel and conversation-history compaction without deleting nodes from disk.
 *   **Runtime**: The package is source-first. Pi loads the TypeScript extension files declared in `pi.extensions` (`src/index.ts`, `src/context.ts`); no `dist/` build artifact is required for publishing.
 *   **ACM Enablement**: `context_compact` automatically acquires a missing `ExtensionCommandContext` by dispatching `/acm` with `expandPromptTemplates: true` (Pi >= 0.84.2). No manual enablement is needed. The command handler only captures ctx; compaction navigation still waits for idle outside the event handler. Context and pending compaction state belong to each extension instance and are cleared on shutdown. `/acm [task]` remains compatible.

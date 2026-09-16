@@ -13,6 +13,10 @@ Strictly follow the steps below.
 6. Output "Success" if the guess is correct; otherwise, output "Failure".
 ```
 
+## Timeline validation
+
+`npm test` covers checkpoint phase-suffix parsing, timeline structure without compact advice, and interval token estimates (which exclude internal context-management traffic).
+
 ## Live command-context validation
 
 Run the opt-in real-model test (uses existing Pi authentication and consumes tokens):

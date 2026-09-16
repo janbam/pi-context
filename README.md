@@ -31,6 +31,10 @@ ACM (**A**gentic **C**ontext **M**anagement) works automatically with Pi >= 0.84
 
 `/acm` and `/acm <task>` remain available for compatibility.
 
+### Checkpoint naming and timeline estimates
+
+Use checkpoint names ending in `-start`, `-done`, `-pivot`, `-pause`, or `-resume` to declare a task or phase change, keeping the scope prefix consistent within a phase's lifecycle (for example `parser-investigation-start` → `parser-investigation-done`). Other names remain valid ordinary anchors. Timeline displays the parsed phase next to each label, folds hidden intervals with message counts and approximate tokens using Pi's heuristic, and marks off-path summaries. Interval estimates describe historical content, exclude internal context-management traffic, and are not exact current-model occupancy or reclaimable space.
+
 Open a visual dashboard to inspect context-window usage and token distribution (similar to `claude code /context`).
 
 ```bash
@@ -44,7 +48,7 @@ Open a visual dashboard to inspect context-window usage and token distribution (
 This extension adds the `context-management` skill, which guides agents to keep the active conversation as the smallest sufficient working set for the next step. It includes three core tools:
 
 1. **🔖 Anchor (`context_checkpoint`)**
-   Label a meaningful conversation node with a unique semantic checkpoint name, such as `parser-fix-start` or `timeout-investigation-search`.
+   Label a meaningful conversation node with a unique semantic checkpoint name, such as `parser-investigation-start` and `parser-investigation-done`.
 
 2. **📊 Inspect (`context_timeline`)**
    View the active path as a structural map of checkpoints, summaries/compactions, branch points, user turns, and current position. Use it when orientation or compact target selection depends on history shape.

@@ -104,7 +104,31 @@ Also read `references/retry-branch-and-pivot.md` when multiple approaches, faile
 
 ### `context_checkpoint`
 
-Use before noisy work, a new phase, a risky attempt, switching subtasks, or after a meaningful milestone. Use semantic names such as `<task>-start`, `<task>-<phase>`, `<task>-<attempt>`, or `<task>-<milestone>`. Avoid generic names like `start`, `checkpoint-1`, or `retry`.
+Use before noisy work, a new phase, a risky attempt, switching subtasks, or after a meaningful milestone. Record actual task changes with a unique **`<scope>-<phase>`** name:
+
+| Suffix | Agent-declared meaning |
+| --- | --- |
+| `-start` | Begin a task or phase with a concrete goal. Does not close earlier work. |
+| `-done` | This scope has a stable result. Does not mean the whole user task is finished. |
+| `-pivot` | Abandon or replace the current approach; not merely encounter an error. |
+| `-pause` | Put work aside for feedback, a decision, an external result, or another task. |
+| `-resume` | Return to paused work. |
+
+Keep scope identical for related markers, such as `parser-investigation-start` and `parser-investigation-done`. Use a different scope for a different phase, such as `parser-validation-start`. Names must remain unique; use an attempt/cycle qualifier before the suffix when repeating work. Timeline shows the parsed phase next to the label but does not infer relationships between differently qualified names. Other names remain valid ordinary anchors.
+
+Recognizing a meaningful new task, stable result, pivot, interruption, or resumption should lead to the corresponding checkpoint—not just a prose description. Do not mark every message or minor action. Avoid generic names like `start`, `checkpoint-1`, or `retry`.
+
+### Interpreting phase markers
+
+Phase markers are your own declarations, not a tracked state machine; timeline displays them verbatim. Use the sequence to reflect on what actually happened:
+
+- **New task / `done → start`:** a known continuation may now benefit from summarizing the completed raw trail. Apply the compact gate before accumulating the next noisy phase.
+- **Stable result / `done`:** check what was settled and what happens next. If the requested work is complete and you are awaiting feedback, deliver and wait; do not compact just because you marked it done.
+- **Consecutive `start` markers:** distinguish a nested subtask, retry, task switch, or an omitted status marker. Do not assume the previous task is finished or abandoned. Mark a real pause/pivot if appropriate, not to repair an artificial state machine.
+- **`pivot`:** identify the rejected approach, reusable evidence, lesson, and replacement direction. Compact only if these form stable state for a known continuation.
+- **`pause → resume`:** restore the goal, constraints, and pending work; check whether intervening work is now baggage. Pausing for feedback itself is not a compact boundary.
+
+Timeline intervals show historical content estimates, not exact active-model occupancy or reclaimable tokens. When orientation or target choice is unclear, inspect timeline. Choose the smallest sufficient working set, not automatically the most recent checkpoint. Preserve decisions, external effects, verification state, and the known next step in any compact summary.
 
 ### `context_timeline`
 
