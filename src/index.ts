@@ -3,7 +3,6 @@ import {
     type SessionManager,
     type SessionEntry,
     type ExtensionCommandContext,
-    type ContextUsage,
 } from "@earendil-works/pi-coding-agent";
 import {
     Type,
@@ -12,7 +11,7 @@ import {
     type ImageContent,
     type ToolCall,
 } from "@earendil-works/pi-ai";
-import { formatTokens } from "./utils.js";
+import { describeHistoryInterval, formatContextUsage, isContextTool as isInternal, parseCheckpointPhase } from "./utils.js";
 
 // Define missing types locally as they are not exported from the main entry point
 interface SessionTreeNode {
@@ -21,19 +20,7 @@ interface SessionTreeNode {
     label?: string;
 }
 
-const InternalTools = ["context_checkpoint", "context_timeline", "context_compact"];
 const PiContextCustomMessageType = "pi-context";
-
-const isInternal = (name: string) => InternalTools.includes(name);
-
-const formatContextUsage = (usage: ContextUsage | undefined, includeTokens = false): string => {
-    if (usage?.percent == null) return "Unknown";
-
-    const percent = `${usage.percent.toFixed(1)}%`;
-    if (!includeTokens || usage.tokens == null) return percent;
-
-    return `${percent} (${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)})`;
-};
 
 const PassiveCompactionEntryTypes = new Set<SessionEntry["type"]>([
     "custom",
@@ -93,7 +80,7 @@ const resolveTargetId = (sm: SessionManager, target: string): string => {
     return target;
 };
 
-const ContextTimelineDescription = "Inspect the active conversation path as a structural map: checkpoints, summaries/compactions, branch points, user turns, and current position. Use when orientation or compact target selection depends on the shape of history.";
+const ContextTimelineDescription = "Inspect the active conversation path as a structural map: checkpoints, summaries/compactions, branch points, user turns, and current position. Use when orientation or compact target selection depends on the shape of history. Folded intervals show historical token estimates, not reclaimable space.";
 const ContextTimelineParams = Type.Object({
     limit: Type.Optional(Type.Number({ description: "Maximum visible timeline entries (default: 50)." })),
     verbose: Type.Optional(Type.Boolean({ description: "If true, show all messages including internal context-tool traffic. If false (default), collapse to structural milestones." })),
@@ -108,7 +95,7 @@ const ContextCompactParams = Type.Object({
 
 const ContextCheckpointDescription = "Create a named anchor by labeling a conversation history node. This does not branch, summarize, or affect external state; it only makes the point easy to find later in timeline or compact target selection.";
 const ContextCheckpointParams = Type.Object({
-    name: Type.String({ description: "Unique semantic anchor name that encodes the task and phase/purpose, e.g. parser-fix-start or timeout-investigation-search. Avoid generic names like start, checkpoint-1, or retry." }),
+    name: Type.String({ description: "Unique <scope>-<phase> name; phase suffixes: start, done (stable result), pivot (change approach), pause, resume. Keep scope consistent within a phase's lifecycle; other names remain ordinary anchors." }),
     target: Type.Optional(Type.String({ description: "Optional history node ID or checkpoint name to label. Defaults to the current meaningful position near the conversation head." })),
 });
 
@@ -383,18 +370,21 @@ export default function (pi: ExtensionAPI) {
             }
 
             const lines: string[] = [];
-            let hiddenCount = 0;
+            let hiddenEntries: SessionEntry[] = [];
+            const flushHidden = () => {
+                if (hiddenEntries.length) lines.push(`  :  ... (${describeHistoryInterval(hiddenEntries)}) ...`);
+                hiddenEntries = [];
+            };
 
             sequence.forEach((entry) => {
                 if (!visibleSequenceIds.has(entry.id)) {
-                    hiddenCount++;
+                    // Off-path summaries never contribute to active-path intervals.
+                    if (backboneIds.has(entry.id) && entry.type !== "custom" && entry.type !== "label" &&
+                        entry.type !== "custom_message") hiddenEntries.push(entry);
                     return;
                 }
 
-                if (hiddenCount > 0) {
-                    lines.push(`  :  ... (${hiddenCount} hidden messages) ...`);
-                    hiddenCount = 0;
-                }
+                flushHidden();
 
                 const isHead = entry.id === currentLeafId;
                 const label = sm.getLabel(entry.id);
@@ -422,7 +412,11 @@ export default function (pi: ExtensionAPI) {
 
                 const id = entry.id;
                 const isRoot = branch.length > 0 && entry.id === branch[0].id;
-                const meta = [isRoot ? "ROOT" : null, isHead ? "HEAD" : null, label ? `checkpoint: ${label}` : null].filter(Boolean).join(", ");
+                const stage = label ? parseCheckpointPhase(label)?.phase : undefined;
+                const meta = [isRoot ? "ROOT" : null, isHead ? "HEAD" : null,
+                    !backboneIds.has(id) ? "off-path" : null,
+                    label ? `checkpoint: ${label}` : null,
+                    stage ? `phase: ${stage}` : null].filter(Boolean).join(", ");
 
                 const body = content.length > 100 ? content.slice(0, 100) + "..." : content;
 
@@ -431,32 +425,8 @@ export default function (pi: ExtensionAPI) {
                 lines.push(`${marker} ${id}${meta ? ` (${meta})` : ""} [${role}] ${body}`);
             });
 
-            if (hiddenCount > 0) {
-                lines.push(`  :  ... (${hiddenCount} hidden messages) ...`);
-            }
-
-            // --- Context Dashboard (HUD) ---
-            const usageStr = formatContextUsage(ctx.getContextUsage(), true);
-
-            // Find the distance to the nearest checkpoint
-            let stepsSinceCheckpoint = 0;
-            let nearestCheckpointName = "None";
-            for (let i = branch.length - 1; i >= 0; i--) {
-                const id = branch[i].id;
-                const label = sm.getLabel(id);
-                if (label) {
-                    nearestCheckpointName = label;
-                    break;
-                }
-                stepsSinceCheckpoint++;
-            }
-
-            const hud = [
-                `[Context Dashboard]`,
-                `• Context Usage:    ${usageStr}`,
-                `• Segment Size:     ${stepsSinceCheckpoint} steps since last checkpoint '${nearestCheckpointName}'`,
-                `---------------------------------------------------`
-            ].join("\n");
+            flushHidden();
+            const hud = `Context: ${formatContextUsage(ctx.getContextUsage(), true)}`;
 
             return { content: [{ type: "text", text: hud + "\n" + (lines.join("\n") || "(Root Path Only)") }], details: {} };
         },

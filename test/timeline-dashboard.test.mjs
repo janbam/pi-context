@@ -25,12 +25,10 @@ for (const checkpoint of [undefined, "review-start"]) {
             getContextUsage: () => undefined,
         });
         const text = result.content[0].text;
-        assert.match(text, /\[Context Dashboard\]/);
-        assert.match(text, /Context Usage:/);
-        assert.ok(text.includes(`Segment Size:     ${checkpoint ? 1 : 2} steps since last checkpoint '${checkpoint ?? "None"}'`));
+        assert.match(text, /^Context: Unknown$/m);
         assert.match(text, /aaaaaaaa.*ROOT.*Review the patch/);
         assert.match(text, /bbbbbbbb.*HEAD.*Tests passed/);
+        if (checkpoint) assert.match(text, /aaaaaaaa.*checkpoint: review-start.*phase: start/);
         assert.doesNotMatch(text, /compact/i);
-        assert.equal(text.split("\n").filter((line) => line.startsWith("• ")).length, 3);
     });
 }
