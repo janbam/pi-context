@@ -43,6 +43,16 @@ Open a visual dashboard to inspect context-window usage and token distribution (
 
 ![](img/context.png)
 
+### Session analysis (repository checkout)
+
+Generate an offline token timeline from a saved Pi session, with checkpoint markers, compaction events, cumulative usage, and an explicitly simulated threshold-only comparison:
+
+```bash
+npm run analyze:session -- /path/to/session.jsonl --out /path/to/report
+```
+
+Open `report/session-token-chart.html` in a browser. See [session analysis documentation](tools/session-analysis/README.md) for snapshot cutoffs, simulation parameters, measurement limits, and privacy notes. This developer tool is not included in the npm extension package.
+
 ### For Agents
 
 This extension adds the `context-management` skill, which guides agents to keep the active conversation as the smallest sufficient working set for the next step. It includes three core tools:

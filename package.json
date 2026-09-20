@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "analyze:session": "node tools/session-analysis/session-analysis-cli.mjs",
     "test:live": "node test/live-command-context.mjs",
     "test": "npm run typecheck && rm -rf dist && tsc --declaration false && node --test test/*.test.mjs"
   },
