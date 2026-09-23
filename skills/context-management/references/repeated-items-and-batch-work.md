@@ -14,10 +14,10 @@ Use this reference when the items are similar enough that the same method should
 1. Create a checkpoint at the start of the overall repeated-item task.
 2. If item 1 teaches you a reusable approach, checkpoint again after that approach becomes clear.
 3. Work item by item.
-4. Compact after each completed item or completed mini-phase when another item remains and the raw path is no longer worth carrying forward.
+4. Between items, apply the main skill's compact gate. Compact only when item-specific noise is worth removing after accounting for shared raw examples, methods, or code needed by the remaining items.
 5. Use timeline occasionally to verify that the history still has a clean structure.
 
-For repeated-item work, the default between-item move is not "keep carrying the last item's raw reasoning". Once an item is done, its takeaway is stable, and another item remains, compact to the repeated-work anchor or other baseline that preserves the reusable method without item-specific noise. If the last item completes the whole user request, deliver the final answer and retain the raw trail for review or feedback; decide whether to compact only after a later message establishes new work or an explicit next phase.
+An item boundary is not an automatic cleanup step. If the next items compare against the same examples or edit the same code, retain that shared raw working set. If completed items left substantial unrelated noise, compact to a baseline that preserves the reusable method and necessary examples. If the last item completes the whole user request, deliver the final answer and retain the raw trail for review or feedback; decide whether to compact only after a later message establishes new work or an explicit next phase.
 
 ## Useful anchors
 
@@ -37,9 +37,9 @@ Run `context_timeline` when:
 
 ## When to compact
 
-Compact after:
+Consider compaction, subject to the main skill's gate, after:
 - a representative item produced a reusable method and the batch will continue
-- a single item is complete, another item remains, and the raw path should be compacted
+- an item is complete, more work remains, and its raw trail is no longer needed for comparison or reuse
 - an item-specific dead end is understood and should not remain active in full
 - a new user message arrives after the batch completed, and the batch's raw path is stale baggage for the new task
 

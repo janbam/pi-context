@@ -30,8 +30,8 @@ Both variants use the same context-management rhythm.
 2. Create a checkpoint for the clean plan-ready state.
 3. Execute one subtask or phase.
 4. If that subtask becomes noisy, let it get noisy locally.
-5. Once the subtask produces a stable takeaway and another subtask or phase remains, compact to the anchor that gives the next subtask the cleanest sufficient working set, often the plan-ready or phase-start anchor.
-6. Continue with the next subtask from that focused working set.
+5. Once a subtask produces a stable takeaway, apply the main skill's compact gate. Check whether the next subtask still needs the same plan details, code, tests, or evidence; a checked-off item does not make them stale.
+6. Continue with that shared working set, or compact if the chosen anchor removes enough low-value history to outweigh reconstruction.
 7. If the plan changes materially, checkpoint the updated plan state again.
 8. If the last subtask completes the user's whole request, give the final answer without an automatic compact and retain the raw trail for review or feedback. Decide on cleanup only when a later message establishes a new task or explicit next phase.
 
@@ -54,13 +54,13 @@ Run `context_timeline` when:
 
 ## When to compact
 
-Compact when:
+Consider compaction under the main skill's gate when:
 - a subtask is complete, another subtask remains, and its raw execution path is no longer worth keeping active
-- a phase finished and the next phase should start from a cleaner state
+- a phase finished and the next phase benefits from cleanup after accounting for the raw material it would need to reload
 - the plan remains valid but the current execution segment has become noisy
 - a later user message starts a new task after the plan-driven task completed noisily
 
-Do not compact just because a todo list exists. Compact when a specific execution segment has already served its purpose and can be compacted for an actual continuation. If the segment changed files, launched/stopped processes, or updated external systems, record those side effects in the summary; context navigation does not revert them.
+Do not compact just because a todo list exists or a milestone was checked off. For example, schema changes followed by consumer updates may depend on the same loaded interfaces and tests; retain them through that shared work. Compact when a specific execution segment has already served its purpose and can be compacted for an actual continuation. If the segment changed files, launched/stopped processes, or updated external systems, record those side effects in the summary; context navigation does not revert them.
 
 ## Replan
 
@@ -75,7 +75,8 @@ If the plan change is driven by failed branches or strategy shifts, also read `r
 ## Common mistakes
 
 Avoid:
-- keeping every finished subtask's raw reasoning active instead of preserving only the reusable state
+- retaining obsolete subtask history when a summary would help the continuation
+- discarding shared raw code or plan details just because the subtask label changed
 - choosing an anchor that drops the current plan state without preserving it in the summary
 - failing to checkpoint the updated plan after a major replan
 - confusing repeated-item work with plan-driven work when the subtasks are actually different in nature

@@ -3,7 +3,6 @@ import {
     type SessionManager,
     type SessionEntry,
     type ExtensionCommandContext,
-    type ContextUsage,
 } from "@earendil-works/pi-coding-agent";
 import {
     Type,
@@ -23,7 +22,13 @@ import {
     resolveAcmAction,
     type AcmSessionState,
 } from "./acm.js";
-import { formatTokens, wrapSystemNotification } from "./utils.js";
+import {
+    describeHistoryInterval,
+    formatContextUsage,
+    isContextTool as isInternal,
+    parseCheckpointPhase,
+    wrapSystemNotification,
+} from "./utils.js";
 
 // Define missing types locally as they are not exported from the main entry point
 interface SessionTreeNode {
@@ -32,21 +37,9 @@ interface SessionTreeNode {
     label?: string;
 }
 
-const InternalTools = ["context_checkpoint", "context_timeline", "context_compact"];
 const PiContextCustomMessageType = "pi-context";
-/** Private command used only to reacquire session-bound navigation context. */
-const AcmRestoreCommand = "pi-context-restore-acm-command-context";
-
-const isInternal = (name: string) => InternalTools.includes(name);
-
-const formatContextUsage = (usage: ContextUsage | undefined, includeTokens = false): string => {
-    if (usage?.percent == null) return "Unknown";
-
-    const percent = `${usage.percent.toFixed(1)}%`;
-    if (!includeTokens || usage.tokens == null) return percent;
-
-    return `${percent} (${formatTokens(usage.tokens)}/${formatTokens(usage.contextWindow)})`;
-};
+/** Private command dispatched only to acquire session-bound navigation context; `/acm` would toggle state. */
+const AcmCommandContextCommand = "pi-context-acquire-command-context";
 
 const PassiveCompactionEntryTypes = new Set<SessionEntry["type"]>([
     "custom",
@@ -57,22 +50,32 @@ const PassiveCompactionEntryTypes = new Set<SessionEntry["type"]>([
 ]);
 
 /**
- * Detect whether session activity after the compact turn should cancel the
- * requested compaction. Non-contextual session state is ignored; entries that
- * participate in model context, plus unknown future behavior, fail closed.
+ * Detect conversation advancement since the compact request, not agent_end.
+ * Only passive entries, this tool's successful result, and an empty abort
+ * boundary are safe to omit from the already-written handoff summary.
  */
 export const didConversationAdvance = (
     branch: readonly SessionEntry[],
-    compactTurnLeaf: string | null,
+    requestLeaf: string | null,
+    compactToolCallId?: string,
 ): boolean => {
-    if (!compactTurnLeaf) return true;
+    if (!requestLeaf) return true;
 
-    const compactTurnIndex = branch.findIndex((entry) => entry.id === compactTurnLeaf);
-    if (compactTurnIndex === -1) return true;
+    const requestIndex = branch.findIndex((entry) => entry.id === requestLeaf);
+    if (requestIndex === -1) return true;
 
-    return branch
-        .slice(compactTurnIndex + 1)
-        .some((entry) => !PassiveCompactionEntryTypes.has(entry.type));
+    return branch.slice(requestIndex + 1).some((entry) => {
+        if (PassiveCompactionEntryTypes.has(entry.type)) return false;
+        if (compactToolCallId && entry.type === "message") {
+            const message = entry.message;
+            if (message.role === "toolResult" && message.toolName === "context_compact" &&
+                message.toolCallId === compactToolCallId && !message.isError) return false;
+            if (message.role === "assistant" && message.content.length === 0 &&
+                (message.stopReason === "aborted" ||
+                    (message.stopReason === "error" && message.errorMessage === "This operation was aborted"))) return false;
+        }
+        return true;
+    });
 };
 
 const resolveTargetId = (sm: SessionManager, target: string): string => {
@@ -96,7 +99,7 @@ const resolveTargetId = (sm: SessionManager, target: string): string => {
     return target;
 };
 
-const ContextTimelineDescription = "Inspect the active conversation path as a structural map: checkpoints, summaries/compactions, branch points, user turns, and current position. Use when orientation or compact target selection depends on the shape of history.";
+const ContextTimelineDescription = "Inspect the active conversation path as a structural map: checkpoints, summaries/compactions, branch points, user turns, and current position. Use when orientation or compact target selection depends on the shape of history. Folded intervals show historical token estimates, not reclaimable space.";
 const ContextTimelineParams = Type.Object({
     limit: Type.Optional(Type.Number({ description: "Maximum visible timeline entries (default: 50)." })),
     verbose: Type.Optional(Type.Boolean({ description: "If true, show all messages including internal context-tool traffic. If false (default), collapse to structural milestones." })),
@@ -111,7 +114,7 @@ const ContextCompactParams = Type.Object({
 
 const ContextCheckpointDescription = "Create a named anchor by labeling a conversation history node. This does not branch, summarize, or affect external state; it only makes the point easy to find later in timeline or compact target selection.";
 const ContextCheckpointParams = Type.Object({
-    name: Type.String({ description: "Unique semantic anchor name that encodes the task and phase/purpose, e.g. parser-fix-start or timeout-investigation-search. Avoid generic names like start, checkpoint-1, or retry." }),
+    name: Type.String({ description: "Unique <scope>-<phase> name; phase suffixes: start, done (stable result), pivot (change approach), pause, resume. Keep scope consistent within a phase's lifecycle; other names remain ordinary anchors." }),
     target: Type.Optional(Type.String({ description: "Optional history node ID or checkpoint name to label. Defaults to the current meaningful position near the conversation head." })),
 });
 
@@ -119,7 +122,9 @@ type CompactRequest = Static<typeof ContextCompactParams> & {
     tid: string;
     enrichedMessage: string;
     usageBeforeText: string;
-    nid?: string;
+    /** Assistant entry holding the compact tool call; advancement is measured from here. */
+    requestLeaf: string;
+    toolCallId: string;
 };
 
 export default function (pi: ExtensionAPI) {
@@ -128,9 +133,13 @@ export default function (pi: ExtensionAPI) {
     }
 
     let acmEnabled = false;
+    let runtimeActive = true;
     let commandCtx: ExtensionCommandContext | null = null;
     let compactRequest: CompactRequest | null = null;
     let stateNotificationPending = false;
+    let pendingCommandContext: Promise<ExtensionCommandContext> | null = null;
+    let resolveCommandContext: ((ctx: ExtensionCommandContext) => void) | undefined;
+    let rejectCommandContext: ((error: Error) => void) | undefined;
 
     /** Inject an extension notification through Pi's user-role custom-message boundary. */
     const sendSystemNotification = (content: string): void => {
@@ -161,6 +170,43 @@ export default function (pi: ExtensionAPI) {
         details: {},
     });
 
+    /** Record a session-bound command context and settle any pending acquisition with it. */
+    const captureCommandContext = (ctx: ExtensionCommandContext): void => {
+        commandCtx = ctx;
+        resolveCommandContext?.(ctx);
+    };
+
+    /**
+     * Return the command context required for tree navigation, acquiring it on first use.
+     * Rejects after 5s when the host cannot dispatch extension commands from a running tool.
+     */
+    async function ensureCommandContext(): Promise<ExtensionCommandContext> {
+        if (commandCtx) return commandCtx;
+        if (pendingCommandContext) return pendingCommandContext;
+
+        // sendUserMessage is fire-and-forget; the private command handler resolves the promise.
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        pendingCommandContext = new Promise<ExtensionCommandContext>((resolve, reject) => {
+            resolveCommandContext = resolve;
+            rejectCommandContext = reject;
+            timeout = setTimeout(() => reject(new Error(
+                "context_compact: automatic command context acquisition timed out. Requires Pi >= 0.84.2 with extension command dispatch support.",
+            )), 5000);
+            pi.sendUserMessage(`/${AcmCommandContextCommand}`, {
+                deliverAs: "followUp",
+                expandPromptTemplates: true,
+            });
+        });
+        try {
+            return await pendingCommandContext;
+        } finally {
+            clearTimeout(timeout);
+            pendingCommandContext = null;
+            resolveCommandContext = undefined;
+            rejectCommandContext = undefined;
+        }
+    }
+
     pi.registerCommand("acm", {
         description: "Toggle ACM or set it explicitly with /acm enable|disable",
         handler: async (args, ctx) => {
@@ -170,11 +216,11 @@ export default function (pi: ExtensionAPI) {
                 return;
             }
 
-            // A command context is session-bound; retain it only while ACM is enabled.
+            // Any command context serves later navigation; disabling drops deferred compaction.
+            captureCommandContext(ctx);
             const nextEnabled = action === "enable";
             const stateChanged = nextEnabled !== acmEnabled;
             acmEnabled = nextEnabled;
-            commandCtx = nextEnabled ? ctx : null;
             if (!nextEnabled) compactRequest = null;
 
             // Collapse effective changes into one durable final-state notice for the next model call.
@@ -186,15 +232,15 @@ export default function (pi: ExtensionAPI) {
         },
     });
 
-    pi.registerCommand(AcmRestoreCommand, {
-        description: "Restore pi-context's internal session-bound command context",
-        handler: async (_args, ctx) => {
-            if (acmEnabled) commandCtx = ctx;
-        },
+    pi.registerCommand(AcmCommandContextCommand, {
+        description: "Internal: acquire pi-context's session-bound command context",
+        handler: async (_args, ctx) => captureCommandContext(ctx),
     });
 
     pi.on("session_start", (event, ctx) => {
-        // Never carry command or pending-compaction handles across session boundaries.
+        // Never carry command or pending-compaction handles across session boundaries;
+        // context_compact reacquires the command context lazily.
+        runtimeActive = true;
         commandCtx = null;
         compactRequest = null;
 
@@ -211,17 +257,14 @@ export default function (pi: ExtensionAPI) {
             stateNotificationPending = false;
             persistAcmState();
         }
-
-        if (acmEnabled) {
-            // A private command avoids collisions with public `/acm` registrations.
-            pi.sendUserMessage(`/${AcmRestoreCommand}`, { expandPromptTemplates: true });
-        }
     });
 
     pi.on("session_shutdown", () => {
-        // Invalidate deferred navigation work before Pi tears down this extension runtime.
+        // Invalidate deferred navigation work and pending acquisition before Pi tears down this runtime.
+        runtimeActive = false;
         commandCtx = null;
         compactRequest = null;
+        rejectCommandContext?.(new Error("context_compact: session closed while acquiring command context."));
     });
 
     pi.on("context", (event) => {
@@ -462,18 +505,21 @@ export default function (pi: ExtensionAPI) {
             }
 
             const lines: string[] = [];
-            let hiddenCount = 0;
+            let hiddenEntries: SessionEntry[] = [];
+            const flushHidden = () => {
+                if (hiddenEntries.length) lines.push(`  :  ... (${describeHistoryInterval(hiddenEntries)}) ...`);
+                hiddenEntries = [];
+            };
 
             sequence.forEach((entry) => {
                 if (!visibleSequenceIds.has(entry.id)) {
-                    hiddenCount++;
+                    // Off-path summaries never contribute to active-path intervals.
+                    if (backboneIds.has(entry.id) && entry.type !== "custom" && entry.type !== "label" &&
+                        entry.type !== "custom_message") hiddenEntries.push(entry);
                     return;
                 }
 
-                if (hiddenCount > 0) {
-                    lines.push(`  :  ... (${hiddenCount} hidden messages) ...`);
-                    hiddenCount = 0;
-                }
+                flushHidden();
 
                 const isHead = entry.id === currentLeafId;
                 const label = sm.getLabel(entry.id);
@@ -501,7 +547,11 @@ export default function (pi: ExtensionAPI) {
 
                 const id = entry.id;
                 const isRoot = branch.length > 0 && entry.id === branch[0].id;
-                const meta = [isRoot ? "ROOT" : null, isHead ? "HEAD" : null, label ? `checkpoint: ${label}` : null].filter(Boolean).join(", ");
+                const stage = label ? parseCheckpointPhase(label)?.phase : undefined;
+                const meta = [isRoot ? "ROOT" : null, isHead ? "HEAD" : null,
+                    !backboneIds.has(id) ? "off-path" : null,
+                    label ? `checkpoint: ${label}` : null,
+                    stage ? `phase: ${stage}` : null].filter(Boolean).join(", ");
 
                 const body = content.length > 100 ? content.slice(0, 100) + "..." : content;
 
@@ -510,37 +560,8 @@ export default function (pi: ExtensionAPI) {
                 lines.push(`${marker} ${id}${meta ? ` (${meta})` : ""} [${role}] ${body}`);
             });
 
-            if (hiddenCount > 0) {
-                lines.push(`  :  ... (${hiddenCount} hidden messages) ...`);
-            }
-
-            // --- Context Dashboard (HUD) ---
-            const usageStr = formatContextUsage(ctx.getContextUsage(), true);
-
-            // Find the distance to the nearest checkpoint
-            let stepsSinceCheckpoint = 0;
-            let nearestCheckpointName = "None";
-            for (let i = branch.length - 1; i >= 0; i--) {
-                const id = branch[i].id;
-                const label = sm.getLabel(id);
-                if (label) {
-                    nearestCheckpointName = label;
-                    break;
-                }
-                stepsSinceCheckpoint++;
-            }
-
-            const compactCue = nearestCheckpointName === "None"
-                ? "create a checkpoint before the next noisy phase"
-                : `if this segment has produced a stable result and another phase remains, compact to '${nearestCheckpointName}' with a handoff summary before continuing`;
-
-            const hud = [
-                `[Context Dashboard]`,
-                `• Context Usage:    ${usageStr}`,
-                `• Segment Size:     ${stepsSinceCheckpoint} steps since last checkpoint '${nearestCheckpointName}'`,
-                `• Compact Cue:      ${compactCue}`,
-                `---------------------------------------------------`
-            ].join("\n");
+            flushHidden();
+            const hud = `Context: ${formatContextUsage(ctx.getContextUsage(), true)}`;
 
             return { content: [{ type: "text", text: hud + "\n" + (lines.join("\n") || "(Root Path Only)") }], details: {} };
         },
@@ -553,14 +574,19 @@ export default function (pi: ExtensionAPI) {
         parameters: ContextCompactParams,
         async execute(_id, params: Static<typeof ContextCompactParams>, _signal, _onUpdate, ctx) {
             if (!acmEnabled) return disabledToolResult();
-            if (!commandCtx) {
-                return {
-                    content: [{
-                        type: "text",
-                        text: "ACM is enabled, but its interactive session context is unavailable. Ask the user to run `/acm enable`, then retry.",
-                    }],
-                    details: {},
-                };
+
+            // Anchor at the assistant message containing this summary, not the
+            // current leaf: sibling tools/hooks may already have appended entries.
+            const requestLeaf = [...ctx.sessionManager.getBranch()].reverse().find((entry) =>
+                entry.type === "message" && entry.message.role === "assistant" &&
+                entry.message.content.some((block) => block.type === "toolCall" && block.id === _id),
+            )?.id;
+            if (!requestLeaf) {
+                throw new Error("context_compact: cannot locate the requesting tool call in session history.");
+            }
+            await ensureCommandContext();
+            if (!runtimeActive || !acmEnabled || _signal?.aborted) {
+                throw new Error("context_compact: cancelled before compaction started.");
             }
 
             const sm = ctx.sessionManager as SessionManager;
@@ -585,6 +611,8 @@ export default function (pi: ExtensionAPI) {
                 tid,
                 enrichedMessage,
                 usageBeforeText,
+                requestLeaf,
+                toolCallId: _id,
             };
 
             return { content: [{ type: "text", text: "compact start" }], details: {} };
@@ -603,7 +631,6 @@ export default function (pi: ExtensionAPI) {
         const requestedCompaction = compactRequest;
         const activeCommandCtx = commandCtx;
         compactRequest = null;
-        const compactTurnLeaf = sm.getLeafId();
 
         // `agent_end` is emitted before the core Agent is actually idle. If we
         // trigger a system notification inside this handler, pi still sees an
@@ -612,13 +639,14 @@ export default function (pi: ExtensionAPI) {
         // drained. Defer navigation + continuation until the current run settles.
         setTimeout(async () => {
             try {
+                if (!runtimeActive) return;
                 await activeCommandCtx.waitForIdle();
 
                 // Disabling ACM or replacing the session invalidates this deferred request.
-                if (!acmEnabled || commandCtx !== activeCommandCtx) return;
+                if (!runtimeActive || !acmEnabled || commandCtx !== activeCommandCtx) return;
 
                 const branch = sm.getBranch();
-                if (didConversationAdvance(branch, compactTurnLeaf)) {
+                if (didConversationAdvance(branch, requestedCompaction.requestLeaf, requestedCompaction.toolCallId)) {
                     activeCommandCtx.ui.notify("context_compact cancelled: conversation advanced before compaction completed.", "warning");
                     sendSystemNotification([
                         "context_compact cancelled: conversation advanced before the summary branch was created.",
@@ -628,12 +656,11 @@ export default function (pi: ExtensionAPI) {
                 }
 
                 const nid = sm.branchWithSummary(requestedCompaction.tid, requestedCompaction.enrichedMessage);
-                requestedCompaction.nid = nid;
                 // branchWithSummary advances the leaf to the summary entry. Reset
                 // it so navigateTree(nid) can rebuild agent state instead of
                 // returning early as a no-op.
                 sm.branch(requestedCompaction.tid);
-                await activeCommandCtx.navigateTree(requestedCompaction.nid, {
+                await activeCommandCtx.navigateTree(nid, {
                     summarize: false,
                 });
 
@@ -650,7 +677,7 @@ export default function (pi: ExtensionAPI) {
                 );
             } catch (err) {
                 // A replaced session owns neither this failure notification nor its follow-up.
-                if (commandCtx !== activeCommandCtx) return;
+                if (!runtimeActive || commandCtx !== activeCommandCtx) return;
 
                 const message = err instanceof Error ? err.message : String(err);
                 activeCommandCtx.ui.notify(`context_compact failed: ${message}`, "error");

@@ -1,6 +1,6 @@
 {
   "name": "pi-context",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "private": true,
   "description": "Agentic Context Management for Pi",
   "files": [
@@ -10,6 +10,8 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "analyze:session": "node tools/session-analysis/session-analysis-cli.mjs",
+    "test:live": "node test/live-command-context.mjs",
     "test": "pnpm run typecheck && rm -rf dist && tsc --declaration false && node --test test/*.test.mjs"
   },
   "keywords": [
@@ -27,9 +29,9 @@
   "author": "ttttmr",
   "license": "MIT",
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.80.6",
-    "@earendil-works/pi-coding-agent": "^0.80.6",
-    "@earendil-works/pi-tui": "^0.80.6",
+    "@earendil-works/pi-ai": "^0.85.1",
+    "@earendil-works/pi-coding-agent": "^0.85.1",
+    "@earendil-works/pi-tui": "^0.85.1",
     "typescript": "^5.9.3"
   },
   "pi": {
@@ -48,7 +50,7 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-coding-agent": ">=0.84.2",
     "@earendil-works/pi-tui": "*"
   }
 }

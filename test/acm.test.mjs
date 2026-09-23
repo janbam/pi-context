@@ -146,7 +146,7 @@ test("validates persisted ACM state and wraps model-only projections", () => {
     assert.equal(message.display, false);
 });
 
-test("auto-enables only a new session and captures command context without another state write", async () => {
+test("auto-enables only a new session without dispatching commands at startup", async () => {
     const configDir = mkdtempSync(join(tmpdir(), "pi-context-config-"));
     const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
     writeFileSync(join(configDir, "pi-context.toml"), "auto_enable = true\n");
@@ -157,22 +157,10 @@ test("auto-enables only a new session and captures command context without anoth
         await harness.emit("session_start", { reason: "startup" });
 
         assert.deepEqual(harness.writes, [{ key: AcmSessionStateKey, value: { enabled: true } }]);
-        assert.deepEqual(harness.sentUserMessages, [{
-            message: "/pi-context-restore-acm-command-context",
-            options: { expandPromptTemplates: true },
-        }]);
+        // The command context is acquired lazily by context_compact, never at startup.
+        assert.deepEqual(harness.sentUserMessages, []);
         const context = await harness.emit("context", { messages: [] });
         assert.deepEqual(context.messages, []);
-
-        // Reaching the normal compact path proves the startup command captured a context.
-        const result = await harness.tools.get("context_compact").execute(
-            "tool-call",
-            { target: "deadbeef", summary: "state" },
-            undefined,
-            undefined,
-            { sessionManager: harness.sessionManager, getContextUsage: () => undefined },
-        );
-        assert.equal(result.content[0].text, "Already at target deadbeef");
     } finally {
         if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
         else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -211,7 +199,7 @@ test("restores enabled and disabled sessions without applying auto-enable again"
     const enabled = createHarness({ persistedState: { enabled: true }, entries: [{ type: "message" }] });
     await enabled.emit("session_start", { reason: "resume" });
     assert.equal(enabled.writes.length, 0);
-    assert.equal(enabled.sentUserMessages[0].message, "/pi-context-restore-acm-command-context");
+    assert.equal(enabled.sentUserMessages.length, 0);
     const resumedUserMessage = { role: "user", content: "continue", timestamp: 1 };
     const resumedContext = await enabled.emit("context", { messages: [resumedUserMessage] });
     assert.deepEqual(resumedContext.messages, [resumedUserMessage]);
@@ -247,21 +235,6 @@ test("preserves an unconsumed state notification across reload", async () => {
 
     const secondCall = await reloaded.emit("context", { messages: [userMessage] });
     assert.deepEqual(secondCall.messages, [userMessage]);
-});
-
-test("session shutdown invalidates the captured command context", async () => {
-    const harness = createHarness({ persistedState: { enabled: true }, entries: [{ type: "message" }] });
-    await harness.emit("session_start", { reason: "resume" });
-    await harness.emit("session_shutdown", { reason: "reload" });
-
-    const result = await harness.tools.get("context_compact").execute(
-        "tool-call",
-        { target: "cafebabe", summary: "state" },
-        undefined,
-        undefined,
-        { sessionManager: harness.sessionManager, getContextUsage: () => undefined },
-    );
-    assert.match(result.content[0].text, /interactive session context is unavailable/);
 });
 
 test("initializes a legacy resumed session as disabled rather than applying config", async () => {

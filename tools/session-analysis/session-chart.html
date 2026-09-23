@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-context · Session 工具行为分析</title><link rel="icon" href="data:,">
+<style>
+:root{color-scheme:light;--bg:#fff;--panel:#f3f5f7;--ink:#19232d;--muted:#596674;--grid:#dfe5eb;--blue:#1765c1;--simulation:#b34b26;--line:#434e5b;--error:#b22c31;--select:#e7f0fc;--radius:4px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.7 "Helvetica Neue","PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}main{max-width:1520px;margin:auto;padding:24px 36px}h1,h2,h3,p{margin:0}h1{font-size:24px;font-weight:600}h2{font-size:16px;font-weight:600}h3{font-size:14px;font-weight:600}small,.muted{color:var(--muted)}button,select,input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--grid);border-radius:var(--radius);min-height:40px;padding:6px 10px}button{cursor:pointer;touch-action:manipulation}button:active{transform:scale(.98)}button:disabled{cursor:default;opacity:.5}button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}a{color:var(--blue)}button[aria-pressed=true]{border-color:var(--blue);background:var(--select)}header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.brand{font-size:12px;color:var(--muted)}.subtitle{font-size:13px;margin-top:4px;color:var(--muted)}.metrics{display:flex;flex-wrap:wrap;gap:16px 32px;padding:16px 0;margin-top:16px;border-block:1px solid var(--grid)}.metric strong{font-size:23px;display:block;font-weight:500;line-height:1.4}.metric span{color:var(--muted);font-size:12px}.metric{font-variant-numeric:tabular-nums}.section{margin-top:20px}.section-head,.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.controls label{font-size:12px;color:var(--muted)}.workspace{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:24px;margin-top:20px}.charts{min-width:0}.detail{background:var(--panel);padding:16px;overflow-wrap:anywhere;align-self:start;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}.detail h2{margin-bottom:8px}.detail p+p{margin-top:8px}.detail dl{display:grid;grid-template-columns:100px minmax(0,1fr);font-size:12px;gap:6px 12px;margin:12px 0}.detail dt{color:var(--muted)}.detail dd{margin:0;font-variant-numeric:tabular-nums}.detail ol{padding-left:22px;margin:10px 0}.detail li{font-size:12px;margin:5px 0}.detail button{font-size:12px;text-align:left;max-width:100%;overflow-wrap:anywhere}.detail .steps{list-style:none;padding:0}.steps li{display:flex;justify-content:space-between;border-bottom:1px solid var(--grid);padding:6px 0;gap:12px}.steps .yes{color:var(--blue)}.steps .no{color:var(--muted)}.error{color:var(--error)}.chart{width:100%;display:block;touch-action:pan-y}.chart text{font-family:inherit;font-size:11px;fill:var(--muted)}.chart .grid{stroke:var(--grid);stroke-width:1}.chart .trace{fill:none;stroke-width:1.8;stroke-linejoin:round}.chart .cursor{stroke:var(--blue);stroke-dasharray:3 3;pointer-events:none}.chart .mark{cursor:pointer}.readout{min-height:30px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;margin:6px 0;overflow-wrap:anywhere}.range-caption{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}.hint{font-size:12px;color:var(--muted)}.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}.legend span:before{content:"";display:inline-block;width:8px;height:8px;margin-right:5px;background:var(--line)}.legend .failure:before{background:var(--error)}.legend .selected:before{background:var(--blue)}.legend .removed:before{background:var(--simulation)}.table-scroll{overflow-x:auto;max-width:100%}table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}th{color:var(--muted);font-weight:500;white-space:nowrap}td,th{padding:8px 12px 8px 0;border-bottom:1px solid var(--grid)}td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}td.resource{overflow-wrap:anywhere;max-width:300px}tr.selected{background:var(--select)}td button{font-size:12px;white-space:nowrap}td .status{white-space:nowrap}.pager{display:flex;gap:12px;align-items:center;margin-top:10px;font-size:12px;color:var(--muted)}.notes{margin-top:24px;border-top:1px solid var(--grid);padding-top:16px;font-size:12px;color:var(--muted)}.notes p+p{margin-top:8px}.foot{margin-top:16px;font-size:11px;color:var(--muted);overflow-wrap:anywhere}details{margin-top:16px}summary{cursor:pointer;min-height:40px;padding:6px 0}#warnings{padding-left:20px}.skip{position:absolute;left:12px;top:-80px;background:var(--bg);padding:8px;z-index:2}.skip:focus{top:8px}body.dark{color-scheme:dark;--bg:#111820;--panel:#1c2631;--ink:#e5ecf2;--muted:#a0abb7;--grid:#344150;--blue:#79b3ff;--simulation:#f39b73;--line:#c5ced9;--error:#ff9393;--select:#23384f}
+.legend .pending:before{background:none;border:1px dashed var(--line)}
+header>div{min-width:0}header>button{flex-shrink:0;white-space:nowrap}
+@media(hover:hover){button:hover{border-color:var(--blue)}tr:hover{background:var(--panel)}}
+@media(max-width:1050px){.workspace{grid-template-columns:minmax(0,1fr)}.detail{position:static;max-height:none}.detail dl{grid-template-columns:140px minmax(0,1fr)}}
+@media(max-width:600px){main{padding:16px 12px}h1{font-size:21px}.metrics{gap:12px 20px}.metric strong{font-size:21px}.metric{min-width:90px}.section-head{align-items:flex-start}.controls{gap:6px}select{max-width:100%}.detail{padding:12px}.toolbar{align-items:flex-start}.table-scroll{max-height:440px}.detail dl{grid-template-columns:100px minmax(0,1fr)}}
+@media print{.controls,.pager,.skip{display:none}.workspace{display:block}.detail{position:static;max-height:none}.table-scroll{overflow:visible}.section{break-inside:avoid}}
+</style>
+</head>
+<body><a class="skip" href="#main-content">跳到工具时间线</a><main>
+<header><div><p class="brand">pi-context / SESSION STUDY</p><h1>工具行为与上下文</h1><p class="subtitle" id="subtitle"></p></div><button id="theme" aria-pressed="false">深色</button></header>
+<section class="metrics" aria-label="会话概览">
+<div class="metric"><strong id="tool-count"></strong><span>工具调用</span></div>
+<div class="metric"><strong id="tool-errors"></strong><span>报错 / 无结果</span></div>
+<div class="metric"><strong id="compact-count"></strong><span>compact 请求 / 建立分支</span></div>
+<div class="metric"><strong id="skill-count"></strong><span>Skill 成功读取</span></div>
+<div class="metric"><strong id="peak"></strong><span>输入上下文峰值</span></div>
+</section>
+<section class="section" aria-label="全程工具密度"><div class="section-head"><h2>全程概览</h2><div class="controls"><label for="axis-mode">横轴</label><select id="axis-mode"><option value="sequence">记录顺序</option><option value="time">实际时间</option><option value="active">折叠空闲</option></select><button id="reset-range">显示全程</button></div></div><p class="hint">框选或点击密度条缩放。记录顺序保留并行调用所在位置，不代表执行耗时。</p><svg id="overview" class="chart" role="img" aria-label="全程工具调用密度，可框选缩放"></svg>
+<div class="controls"><label for="range-start">从源行</label><input id="range-start" type="number" min="1" style="width:100px"><label for="range-end">到源行</label><input id="range-end" type="number" min="1" style="width:100px"><button id="apply-range">查看范围</button><label for="time-range">活动时段</label><select id="time-range" aria-label="选择活动时段"></select></div><p id="range-caption" class="range-caption" aria-live="polite"></p></section>
+<div class="workspace" id="main-content"><div class="charts">
+<section><div class="section-head"><h2>工具时间线</h2><div class="controls"><label for="tool-filter">筛选</label><select id="tool-filter"><option value="">全部工具</option></select></div></div><div class="legend"><span>调用</span><span class="failure">工具报错</span><span class="pending">未见结果</span><span class="selected">选中</span><span class="removed">被选中压缩移出的调用</span></div><svg id="tool-chart" class="chart" role="img" aria-label="按工具类型排列的时间线"></svg><p id="readout" class="readout" aria-live="polite">点击调用或下方列表查看证据；密集区点击后放大。</p></section>
+<section class="section"><h2>输入上下文</h2><p class="hint">与工具时间线共用横轴。相邻输入变化不归因于单个工具。</p><svg id="context-chart" class="chart" role="img" aria-label="输入上下文曲线"></svg></section>
+</div><aside id="detail" class="detail" aria-label="事件详情" tabindex="-1"><h2>事件详情</h2><p class="muted">选择一次工具调用，查看结果、来源位置及前后动作。</p></aside></div>
+<section class="section"><div class="section-head"><h2>范围内调用</h2><p id="list-count" class="hint"></p></div><div class="table-scroll"><table><thead><tr><th class="num">源行</th><th>工具</th><th>状态</th><th>文件目标</th><th class="num">输出字符</th><th>详情</th></tr></thead><tbody id="tool-rows"></tbody></table></div><div class="pager"><button id="previous-page">上一页</button><span id="page-label"></span><button id="next-page">下一页</button></div></section>
+<section class="section"><h2>压缩过程</h2><p class="hint">发起、返回、建立分支、模型续行分别取证。模型续行不代表业务完成。</p><div id="compact-list" class="table-scroll"></div></section>
+<details id="auxiliary"><summary>辅助分析：累计 token 与阈值模拟</summary><p id="total" class="hint"></p><svg id="cumulative-chart" class="chart" role="img" aria-label="累计处理 token"></svg><svg id="simulation-chart" class="chart" role="img" aria-label="上下文与阈值模拟"></svg><p id="simulation-note" class="hint"></p></details>
+<section class="notes"><h2>如何解读</h2><p>重读只是一条检查线索，不自动判为浪费。恢复观察取摘要分支后最多 10 次工具调用，遇到下一次 compact 停止；首个普通工具动作不等于有效业务进展。没有压缩的区间也保留完整工具路径。</p><p>按文件记录顺序展示全部历史分支，不伪装为单一线性对话。上下文导航不回滚外部文件。活动时段按超过 30 分钟的无记录间隔分组，不代表任务阶段；“折叠空闲”横轴移除这些间隔，实际时间模式则保留等待。</p><p>上下文 = input + cacheRead + cacheWrite；累计另加 output，含已记录辅助 usage，缓存每次读取重复计入。工具输出按文本字符统计，不是 token。调用和结果时间是记录时间，执行耗时未知。无 usage 也可分析工具行为。</p><p>默认不导出命令、参数正文、用户正文、工具输出正文或摘要正文。仍保留工具名、文件目标简称、checkpoint 名称、时间及 ID，分享前需检查。Skill 读取哈希只对应返回文本；部分读取不能证明完整版本，调用 context 工具也不证明由 Skill 导致。</p><details><summary>Skill 读取证据</summary><ul id="skill-evidence"></ul></details><details><summary>数据警告与结构事件</summary><ul id="warnings"></ul><ul id="structure-events"></ul></details></section>
+<footer class="foot" id="footer"></footer>
+</main><script id="session-data" type="application/json">__SESSION_DATA__</script>
+<script id="session-time-axis">
+// Remove idle intervals completely; timestamps and within-phase elapsed time stay unchanged.
+function createSessionTimeAxis(times, idleThreshold = 30 * 60 * 1000) {
+    const ordered = [...new Set(times)].sort((a, b) => a - b);
+    const gaps = [];
+    for (let index = 1; index < ordered.length; index++) {
+        if (ordered[index] - ordered[index - 1] > idleThreshold) gaps.push({ start: ordered[index - 1], end: ordered[index] });
+    }
+    return {
+        gaps,
+        toPlotTime(time) { return time - gaps.reduce((removed, gap) => removed + Math.max(0, Math.min(time, gap.end) - gap.start), 0); },
+        fromPlotTime(plotTime) {
+            let time = plotTime;
+            for (const gap of gaps) { if (time < gap.start) break; time += gap.end - gap.start; }
+            return time;
+        },
+    };
+}
+</script>
+<script>
+'use strict';
+const sessionData = JSON.parse(document.getElementById('session-data').textContent);
+const { points, usageRows, events, checkpoints, simulation, metadata } = sessionData;
+const tools = sessionData.tools ?? [], milestones = sessionData.milestones ?? [];
+const attempts = sessionData.compactAttempts ?? [], skillReads = sessionData.skillReads ?? [];
+const toolByKey = new Map(tools.map(tool => [tool.key, tool]));
+const attemptByKey = new Map(attempts.map(attempt => [attempt.key, attempt]));
+const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+const dateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: metadata.timezone, month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+const timeFormat = new Intl.DateTimeFormat('en-GB', { timeZone: metadata.timezone, hour:'2-digit', minute:'2-digit' });
+const formatNumber = value => value == null ? '未知' : numberFormat.format(value);
+const formatShort = value => value >= 1e6 ? `${+(value / 1e6).toFixed(2)}M` : value >= 1000 ? `${+(value / 1000).toFixed(1)}k` : `${Math.round(value)}`;
+const statusText = {success:'返回成功',error:'工具报错','no-result':'未见结果',unknown:'未知',requested:'仅发起',accepted:'已返回，未见分支',branched:'已建立分支',resumed:'已见模型续行'};
+const familyNames = {context:'context_*',read:'read',change:'edit / write',bash:'bash',agent:'agent_*',other:'其他工具'};
+const families = Object.keys(familyNames);
+const $ = id => document.getElementById(id);
+function element(tag, text, parent, className) { const node = document.createElement(tag); if (text != null) node.textContent = text; if (className) node.className = className; parent?.append(node); return node; }
+function svgElement(parent, tag, attrs = {}, text) { const node = document.createElementNS('http://www.w3.org/2000/svg',tag); for (const [key,value] of Object.entries(attrs)) node.setAttribute(key,value); if (text != null) node.textContent = text; parent.append(node); return node; }
+const toolResults = tools.filter(tool=>tool.resultLine!=null && tool.resultTime!=null).map(tool=>({line:tool.resultLine,time:tool.resultTime}));
+const records = [...tools,...toolResults,...points,...usageRows,...checkpoints,...milestones,...attempts,...events].filter(row => Number.isFinite(row.time));
+records.sort((a,b) => a.line-b.line);
+const firstLine = records[0]?.line ?? 1, lastLine = Math.max(firstLine, metadata.snapshotLines);
+const observedTime = records[0]?.time ?? Date.parse(metadata.cutoff);
+const firstTime = Number.isFinite(observedTime) ? observedTime : 0, lastTime = Math.max(firstTime + 1, records.at(-1)?.time ?? firstTime);
+const timeAxis = createSessionTimeAxis(records.map(row => row.time));
+let bounds = [firstLine,lastLine], axisMode = 'sequence', filter = '', selectedKey = null, pageIndex = 0;
+let chartCursors = [], removedKeys = new Set();
+const pageSize = 40;
+function lineTime(line) {
+    let low=0,high=records.length;
+    while(low<high){const mid=(low+high)>>1;if(records[mid].line<line)low=mid+1;else high=mid;}
+    return records[Math.min(low,records.length-1)]?.time ?? firstTime;
+}
+function coordinate(row) { return axisMode==='sequence' ? row.line : axisMode==='active' ? timeAxis.toPlotTime(row.time) : row.time; }
+function lineCoordinate(line) { return coordinate({line,time:lineTime(line)}); }
+function visibleTools() { return tools.filter(tool => tool.line>=bounds[0] && tool.line<=bounds[1] && (!filter || tool.name===filter)); }
+function rangeText() { return records.length ? `源行 ${bounds[0]} 至 ${bounds[1]} · ${dateFormat.format(lineTime(bounds[0]))} 至 ${dateFormat.format(lineTime(bounds[1]))}` : '没有活动记录'; }
+function setRange(start,end) {
+    bounds=[Math.max(firstLine,Math.floor(Math.min(start,end))),Math.min(lastLine,Math.ceil(Math.max(start,end)))];
+    if(bounds[0]>=bounds[1])bounds=[Math.max(firstLine,bounds[0]-1),Math.min(lastLine,bounds[1]+1)];
+    pageIndex=0;renderAll();
+}
+function focusLine(line) { setRange(line-100,line+100); }
+$('subtitle').textContent=records.length ? `${dateFormat.format(firstTime)} 至 ${dateFormat.format(lastTime)} · ${metadata.timezone} · ${metadata.models.join(', ') || '模型未知'}` : '没有工具或模型请求记录';
+if(!records.length)for(const id of ['range-start','range-end','apply-range','axis-mode','time-range'])$(id).disabled=true;
+$('tool-count').textContent=formatNumber(tools.length);
+$('tool-errors').textContent=`${tools.filter(t=>t.status==='error').length} / ${tools.filter(t=>t.status==='no-result').length}`;
+$('compact-count').textContent=`${attempts.length} / ${attempts.filter(a=>a.branchLine!=null).length}`;
+$('skill-count').textContent=formatNumber(skillReads.length);
+$('peak').textContent=points.length?formatShort(metadata.peakContext):'无观测';
+$('footer').textContent=`SESSION ${metadata.sessionId ?? 'unknown'} · ${metadata.sourceFile} · 前 ${metadata.snapshotLines} 行 · 截至 ${metadata.cutoff} · SHA-256 ${metadata.snapshotSha256}`;
+$('total').textContent=`累计处理 ${formatNumber(metadata.cumulativeTokens)} tokens（含重复缓存读取），不是未压缩上下文或实际费用。`;
+$('simulation-note').textContent=`人为情景：窗口 ${formatNumber(simulation.window)}，阈值 ${simulation.threshold*100}%，重置 ${formatNumber(simulation.reset)}，模拟重置 ${simulation.resets.length} 次。仅根据观测增量建模，不是 Pi 默认策略重放，不代表净节省。`;
+for(const warning of sessionData.warnings)element('li',warning,$('warnings'));
+if(!sessionData.warnings.length)element('li','无解析警告，不代表行为已通过审计。',$('warnings'));
+for(const row of [...checkpoints,...milestones].sort((a,b)=>a.line-b.line)){const item=element('li',null,$('structure-events'));const button=element('button',`L${row.line} · ${row.kind} · ${row.name ?? row.label ?? row.entryId ?? ''}`,item);button.onclick=()=>{showStructure(row);$('detail').focus();};}
+for(const read of skillReads)element('li',`L${read.line} · ${read.complete?'完整读取证据':'部分或完整性未知'} · ${read.resource ?? ''} · 返回文本 SHA-256 ${read.contentHash ?? '未知'}`,$('skill-evidence'));
+if(!skillReads.length)element('li','没有成功读取这份 Skill 的证据，不能仅凭工具调用归因于 Skill。',$('skill-evidence'));
+for(const name of [...new Set(tools.map(t=>t.name))].sort()){const option=element('option',`${name} (${tools.filter(t=>t.name===name).length})`,$('tool-filter'));option.value=name;}
+const activityRanges=[[firstLine,lastLine]];
+let start=firstLine;
+for(let i=1;i<records.length;i++){if(records[i].time-records[i-1].time>30*60*1000){activityRanges.push([start,records[i-1].line]);start=records[i].line;}}
+activityRanges.push([start,lastLine]);
+activityRanges.forEach((range,index)=>{const option=element('option',index?`时段 ${index} · ${dateFormat.format(lineTime(range[0]))}`:'全程',$('time-range'));option.value=index;});
+function chartSetup(id,height,full=false) {
+    const svg=$(id),width=Math.max(280,svg.getBoundingClientRect().width),left=axisMode==='sequence'?100:100,right=16,top=16,bottom=height-28;
+    svg.replaceChildren();svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+    const range=full?[firstLine,lastLine]:bounds;
+    const min=lineCoordinate(range[0]),max=Math.max(min+1,lineCoordinate(range[1]));
+    const x=row=>left+(coordinate(row)-min)/(max-min)*(width-left-right);
+    const rowAtX=px=>{
+        const value=min+(px-left)/(width-left-right)*(max-min);
+        if(axisMode==='sequence')return Math.round(value);
+        let low=0,high=records.length;
+        while(low<high){const mid=(low+high)>>1;if(coordinate(records[mid])<value)low=mid+1;else high=mid;}
+        return records[Math.min(low,records.length-1)]?.line ?? firstLine;
+    };
+    const defs=svgElement(svg,'defs'),clip=svgElement(defs,'clipPath',{id:`${id}-clip`});
+    svgElement(clip,'rect',{x:left,y:0,width:width-left-right,height:bottom+1});
+    const plot=svgElement(svg,'g',{'clip-path':`url(#${id}-clip)`});
+    for(let i=0;records.length && i<=4;i++){
+        const px=left+i*(width-left-right)/4,line=rowAtX(px);
+        const value=min+i*(max-min)/4;
+        const tickTime=axisMode==='active'?timeAxis.fromPlotTime(value):value;
+        svgElement(svg,'text',{x:px,y:height-7,'text-anchor':i===0?'start':i===4?'end':'middle'},axisMode==='sequence'?`L${line}`:timeFormat.format(tickTime));
+    }
+    if(axisMode==='active')for(const gap of timeAxis.gaps){const px=x({line:0,time:gap.end});if(px>=left&&px<=width-right){const marker=svgElement(svg,'text',{x:px,y:bottom+10},'//');svgElement(marker,'title',{},`折叠 ${dateFormat.format(gap.start)} 至 ${dateFormat.format(gap.end)}`);}}
+    return {svg,plot,width,left,right,top,bottom,x,rowAtX};
+}
+function setCursor(row) { for(const {node,x} of chartCursors){node.setAttribute('x1',x(row));node.setAttribute('x2',x(row));node.setAttribute('visibility','visible');} }
+function addCursor(chart) { const node=svgElement(chart.plot,'line',{y1:0,y2:chart.bottom,class:'cursor',visibility:'hidden'});chartCursors.push({node,x:chart.x}); }
+function renderOverview(){
+    const c=chartSetup('overview',92,true),buckets=new Map(),size=6;
+    for(const tool of tools){const bin=Math.floor((c.x(tool)-c.left)/size);const bucket=buckets.get(bin)??[];bucket.push(tool);buckets.set(bin,bucket);}
+    const maximum=Math.max(1,...[...buckets.values()].map(b=>b.length));
+    for(const [bin,rows] of buckets){const height=rows.length/maximum*48;const bar=svgElement(c.plot,'rect',{x:c.left+bin*size,y:c.bottom-height,width:4,height,fill:'var(--line)'});svgElement(bar,'title',{},`${rows.length} 次调用 · L${rows[0].line} 至 L${rows.at(-1).line}`);}
+    for(const a of attempts)svgElement(c.plot,'line',{x1:c.x(a),x2:c.x(a),y1:6,y2:c.bottom,stroke:a.branchLine!=null?'var(--blue)':'var(--error)',opacity:.5});
+    const selection=svgElement(c.plot,'rect',{x:c.x({line:bounds[0],time:lineTime(bounds[0])}),y:0,width:Math.max(1,c.x({line:bounds[1],time:lineTime(bounds[1])})-c.x({line:bounds[0],time:lineTime(bounds[0])})),height:c.bottom,fill:'var(--blue)',opacity:.10,'pointer-events':'none'});
+    let drag=null;
+    c.svg.onpointerdown=event=>{if(event.button!==0)return;drag=event.clientX-c.svg.getBoundingClientRect().left;c.svg.setPointerCapture(event.pointerId);};
+    c.svg.onpointermove=event=>{if(drag==null)return;const end=event.clientX-c.svg.getBoundingClientRect().left;selection.setAttribute('x',Math.min(drag,end));selection.setAttribute('width',Math.abs(end-drag));};
+    c.svg.onpointerup=event=>{if(drag==null)return;const end=event.clientX-c.svg.getBoundingClientRect().left;const from=c.rowAtX(drag),to=c.rowAtX(end);const distance=Math.abs(end-drag);drag=null;if(distance<6)focusLine(to);else setRange(from,to);};
+    c.svg.onpointercancel=()=>{drag=null;renderOverview();};
+}
+function toolLabel(tool){return `L${tool.line} · ${tool.name} · ${statusText[tool.status] ?? tool.status}${tool.resource?` · ${tool.resource}`:''}`;}
+function renderTools(){
+    const c=chartSetup('tool-chart',332);
+    const rows=visibleTools(),lanes=['结构',...families.map(f=>familyNames[f])];
+    lanes.forEach((name,index)=>{const y=24+index*39;svgElement(c.svg,'text',{x:c.left-10,y:y+4,'text-anchor':'end'},name);svgElement(c.plot,'line',{x1:c.left,x2:c.width-c.right,y1:y+17,y2:y+17,class:'grid'});});
+    const structural=[...milestones,...checkpoints].filter(r=>r.line>=bounds[0]&&r.line<=bounds[1]);
+    for(const row of structural){const mark=svgElement(c.plot,'path',{d:`M ${c.x(row)} 17 l 5 7 l -5 7 l -5 -7 Z`,fill:row.kind==='user'?'var(--line)':'var(--blue)',opacity:.65,class:'mark'});svgElement(mark,'title',{},`L${row.line} · ${row.kind} · ${row.name??row.label??''}`);mark.onclick=()=>showStructure(row);}
+    const buckets=new Map();
+    for(const row of rows){const lane=families.indexOf(row.family);const key=`${lane}:${Math.floor(c.x(row)/8)}`;const bucket=buckets.get(key)??[];bucket.push(row);buckets.set(key,bucket);}
+    for(const bucket of buckets.values()){
+        const row=bucket[0],lane=Math.max(0,families.indexOf(row.family)),x=c.x(row),y=24+(lane+1)*39;
+        const selected=bucket.some(t=>t.key===selectedKey),removed=bucket.some(t=>removedKeys.has(t.key));
+        const color=selected?'var(--blue)':removed?'var(--simulation)':bucket.some(t=>t.status==='error')?'var(--error)':'var(--line)';
+        const pending=bucket.some(t=>t.status==='no-result');
+        const mark=svgElement(c.plot,'rect',{x:x-3,y:y-8,width:Math.min(16,6+Math.log2(bucket.length)*2),height:16,rx:1,fill:pending?'var(--bg)':color,stroke:color,'stroke-dasharray':pending?'2 1':'',opacity:selected?1:.8,class:'mark'});
+        svgElement(mark,'title',{},bucket.length===1?toolLabel(row):`${bucket.length} 次调用，点击放大 · L${row.line} 至 L${bucket.at(-1).line}`);
+        mark.onpointerenter=()=>{setCursor(row);$('readout').textContent=bucket.length===1?toolLabel(row):`${bucket.length} 次密集调用 · 点击放大`;};
+        mark.onclick=()=>{if(bucket.length>1&&bounds[1]-bounds[0]>20)setRange(row.line-5,bucket.at(-1).line+5);else selectTool(row.key);};
+    }
+    const selectedAttempt=attemptByKey.get(selectedKey);
+    if(selectedAttempt?.targetLine!=null && selectedAttempt.targetLine>=bounds[0] && selectedAttempt.targetLine<=bounds[1]){
+        const target={line:selectedAttempt.targetLine,time:lineTime(selectedAttempt.targetLine)};
+        svgElement(c.plot,'line',{x1:c.x(target),x2:c.x(target),y1:8,y2:c.bottom,stroke:'var(--blue)','stroke-dasharray':'2 4',opacity:.6});
+        const label=svgElement(c.plot,'text',{x:c.x(target)+5,y:c.bottom-4},`锚点 L${target.line}`);
+        svgElement(label,'title',{},selectedAttempt.branchLine!=null?'实际摘要分支的保留目标':'请求指定的目标，尚无实际分支');
+    }
+    addCursor(c);
+}
+function renderTokenChart(id,kind){
+    const c=chartSetup(id,180),source=kind==='cumulative'?usageRows:points;
+    if(!source.length){svgElement(c.svg,'text',{x:c.left,y:70},'没有可用的 token 观测；工具时间线仍可使用。');return;}
+    const maximum=Math.max(1,kind==='cumulative'?metadata.cumulativeTokens:kind==='simulation'?Math.max(metadata.peakContext,simulation.window):metadata.peakContext)*1.06;
+    const y=value=>c.bottom-value/maximum*(c.bottom-c.top);
+    for(let i=0;i<=3;i++){const value=maximum*i/3;svgElement(c.svg,'text',{x:c.left-10,y:y(value)+4,'text-anchor':'end'},formatShort(value));svgElement(c.plot,'line',{x1:c.left,x2:c.width-c.right,y1:y(value),y2:y(value),class:'grid'});}
+    const draw=(rows,field,color)=>{const path=rows.map((row,index)=>`${index?'L':'M'} ${c.x(row)} ${y(row[field])}`).join(' ');svgElement(c.plot,'path',{d:path,class:'trace',stroke:color});if(rows.length===1)svgElement(c.plot,'circle',{cx:c.x(rows[0]),cy:y(rows[0][field]),r:3,fill:color});};
+    draw(source,kind==='cumulative'?'cumulative':'context',kind==='cumulative'?'var(--line)':'var(--blue)');
+    if(kind==='simulation'){
+        const pointLines=new Map(points.map(p=>[p.time,p.line]));
+        draw(simulation.trace.map(p=>({...p,line:p.line??pointLines.get(p.time)??firstLine})),'value','var(--simulation)');
+    }
+    for(const a of attempts)if(a.line>=bounds[0]&&a.line<=bounds[1])svgElement(c.plot,'line',{x1:c.x(a),x2:c.x(a),y1:c.top,y2:c.bottom,stroke:a.branchLine!=null?'var(--blue)':'var(--error)','stroke-dasharray':'3 3',opacity:.35});
+    addCursor(c);
+    c.svg.onpointermove=event=>{const line=c.rowAtX(event.clientX-c.svg.getBoundingClientRect().left);const visible=source.filter(p=>p.line>=bounds[0]&&p.line<=bounds[1]);if(!visible.length)return;const point=visible.reduce((best,p)=>Math.abs(p.line-line)<Math.abs(best.line-line)?p:best);setCursor(point);$('readout').textContent=`L${point.line} · ${dateFormat.format(point.time)} · 输入 ${formatNumber(point.context)} · 累计 ${formatNumber(point.cumulative)} tokens`;};
+}
+function selectTool(key,zoom=false){selectedKey=key;const attempt=attemptByKey.get(key);removedKeys=new Set(attempt?.removedToolKeys??[]);if(zoom){filter='';$('tool-filter').value='';const tool=toolByKey.get(key);const branch=attempt?.branchLine??tool.line;setRange(Math.min(attempt?.targetLine??tool.line,tool.line)-10,Math.max(branch,tool.line)+80);}else renderAll();showToolDetail(toolByKey.get(key));}
+function detailField(list,name,value){element('dt',name,list);element('dd',value==null?'未知':String(value),list);}
+function toolButton(parent,key,label){const tool=toolByKey.get(key);if(!tool)return;const button=element('button',label??toolLabel(tool),parent);button.onclick=()=>{selectTool(key);if(tool.line<bounds[0]||tool.line>bounds[1])focusLine(tool.line);};}
+function showStructure(row){selectedKey=null;removedKeys=new Set();renderAll();const panel=$('detail');panel.replaceChildren();element('h2',row.name??row.label??row.kind,panel);const dl=element('dl',null,panel);detailField(dl,'类型',row.kind);detailField(dl,'源行',row.line);detailField(dl,'记录时间',dateFormat.format(row.time));detailField(dl,'节点',row.entryId);if(row.targetId)detailField(dl,'目标节点',row.targetId);if(row.fromId)detailField(dl,'来源节点',row.fromId);if(row.fromLine!=null)detailField(dl,'来源行',row.fromLine);if(row.targetLine!=null)detailField(dl,'目标行',row.targetLine);element('p','结构事件不自动代表任务边界或压缩理由。',panel,'hint');}
+function showToolDetail(tool){
+    if(!tool)return;
+    const panel=$('detail');panel.replaceChildren();element('h2',tool.name,panel);element('p',`L${tool.line} · ${statusText[tool.status]??tool.status}`,panel,tool.status==='error'?'error':'muted');
+    const dl=element('dl',null,panel);
+    detailField(dl,'调用节点',tool.entryId);detailField(dl,'模型请求行',tool.requestLine);detailField(dl,'调用记录',dateFormat.format(tool.time));detailField(dl,'结果行',tool.resultLine);detailField(dl,'结果记录',tool.resultTime!=null?dateFormat.format(tool.resultTime):'未见证据');detailField(dl,'输出字符',formatNumber(tool.outputChars));detailField(dl,'截断证据',tool.truncated?'有':'未发现');detailField(dl,'执行耗时','未知（非执行追踪）');
+    if(tool.resource){detailField(dl,'文件目标',tool.resource);detailField(dl,'资源标识',tool.resourceId?.slice(0,12));if(tool.family==='read'){detailField(dl,'读取起点',tool.readOffset??'默认');detailField(dl,'读取行数',tool.readLimit??'未指定');}}
+    const attempt=attemptByKey.get(tool.key);
+    if(attempt){
+        element('h3','压缩生命周期',panel);
+        const steps=element('ul',null,panel,'steps');
+        for(const [label,line] of [['请求发起',attempt.line],['工具返回',attempt.resultLine],['摘要分支',attempt.branchLine],['模型续行',attempt.continuationLine]]){const li=element('li',null,steps);element('span',label,li);element('span',line!=null?`已记录 L${line}`:'未见证据',li,line!=null?'yes':'no');}
+        element('p',`状态：${statusText[attempt.status]??attempt.status}。续行不代表业务任务成功。`,panel,'hint');
+        const facts=element('dl',null,panel);detailField(facts,'目标锚点',attempt.targetName??attempt.targetId??'未知');detailField(facts,'锚点源行',attempt.targetLine);detailField(facts,'摘要字符',formatNumber(attempt.summaryChars));
+        detailField(facts,'移出历史调用',attempt.branchLine!=null?attempt.removedToolKeys.length:'尚未建立分支');detailField(facts,'保留历史调用',attempt.branchLine!=null?attempt.retainedToolCount:'未知');
+        const focus=element('button','定位锚点与压缩区间',panel);focus.onclick=()=>selectTool(tool.key,true);
+        element('h3','恢复观察',panel);
+        if(attempt.branchLine==null)element('p','没有实际分支，不能评价恢复或重读成本。',panel,'hint');
+        else {
+            element('p','分支后最多 10 次工具调用，遇下一次 compact 截止。只展示动作证据，不自动评分。',panel,'hint');
+            if(attempt.firstWorkToolKey)toolButton(panel,attempt.firstWorkToolKey,'定位首个普通工具动作');
+            const following=element('ol',null,panel);for(const key of attempt.followingToolKeys??[]){const li=element('li',null,following);toolButton(li,key);}
+            if(!(attempt.followingToolKeys??[]).length)element('p','尚未观察到后续工具动作。',panel,'hint');
+            element('h3','读取重合线索',panel);
+            const matches={ 'exact-output':'返回文本完全相同','same-range':'相同文件与读取范围','same-resource':'相同文件，范围或内容不同'};
+            for(const read of attempt.rereads??[]){const p=element('p',`${matches[read.match]??read.match} · ${read.removed?'旧读取已移出分支':'旧读取仍保留'}`,panel,'hint');toolButton(p,read.toolKey);toolButton(p,read.previousToolKey,'查看先前读取');}
+            if(!(attempt.rereads??[]).length)element('p','观察范围内没有匹配的成功读取。这不证明没有恢复成本。',panel,'hint');
+        }
+    }else{
+        element('h3','邻近调用（文件记录顺序）',panel);
+        const index=tools.findIndex(t=>t.key===tool.key),list=element('ol',null,panel);
+        for(const nearby of tools.slice(Math.max(0,index-3),index+4)){const li=element('li',null,list);toolButton(li,nearby.key);}
+        element('p','相邻记录可能涉及其他分支，不代表调用依赖。',panel,'hint');
+    }
+}
+function renderTable(){
+    const rows=visibleTools(),pages=Math.max(1,Math.ceil(rows.length/pageSize));pageIndex=Math.min(pageIndex,pages-1);
+    $('tool-rows').replaceChildren();$('list-count').textContent=`${rows.length} 次调用 · 可通过列表键盘选择`;
+    for(const tool of rows.slice(pageIndex*pageSize,(pageIndex+1)*pageSize)){
+        const tr=element('tr',null,$('tool-rows'),tool.key===selectedKey?'selected':'');element('td',tool.line,tr,'num');element('td',tool.name,tr);element('td',statusText[tool.status]??tool.status,tr,tool.status==='error'?'error status':'status');element('td',tool.resource??'不导出参数正文',tr,'resource');element('td',formatNumber(tool.outputChars),tr,'num');const cell=element('td',null,tr);const button=element('button','查看',cell);button.setAttribute('aria-label',`查看 L${tool.line} ${tool.name}`);button.onclick=()=>{selectTool(tool.key);$('detail').focus({preventScroll:true});};
+    }
+    if(!rows.length){const cell=element('td','范围内没有匹配的工具调用。',element('tr',null,$('tool-rows')));cell.colSpan=6;}
+    $('page-label').textContent=`${pageIndex+1} / ${pages}`;$('previous-page').disabled=pageIndex===0;$('next-page').disabled=pageIndex===pages-1;
+}
+function renderCompacts(){
+    const container=$('compact-list');container.replaceChildren();
+    if(!attempts.length){element('p','没有 context_compact 调用。请在工具时间线查看 checkpoint、timeline 及实际工作路径。',container,'hint');return;}
+    const table=element('table',null,container),head=element('tr',null,element('thead',null,table));
+    for(const text of ['源行','状态','锚点','移出调用','重读线索','详情'])element('th',text,head);
+    const body=element('tbody',null,table);
+    for(const attempt of attempts){const row=element('tr',null,body,selectedKey===attempt.key?'selected':'');element('td',attempt.line,row);element('td',statusText[attempt.status]??attempt.status,row);element('td',attempt.targetName??attempt.targetId??'未知',row,'resource');element('td',attempt.branchLine!=null?attempt.removedToolKeys.length:'未建立',row,'num');element('td',attempt.branchLine!=null?(attempt.rereads??[]).length:'不可评价',row,'num');const cell=element('td',null,row);const button=element('button','定位',cell);button.onclick=()=>{selectTool(attempt.key,true);$('main-content').scrollIntoView({block:'start'});};}
+}
+function renderAll(){
+    chartCursors=[];$('range-start').value=bounds[0];$('range-end').value=bounds[1];$('range-caption').textContent=rangeText();
+    renderOverview();renderTools();renderTokenChart('context-chart','context');renderTable();renderCompacts();
+    if($('auxiliary').open){renderTokenChart('cumulative-chart','cumulative');renderTokenChart('simulation-chart','simulation');}
+}
+$('reset-range').onclick=()=>{$('time-range').value='0';setRange(firstLine,lastLine);};
+$('apply-range').onclick=()=>{const start=Number($('range-start').value),end=Number($('range-end').value);if(Number.isFinite(start)&&Number.isFinite(end)&&start>=firstLine&&end<=lastLine&&start<end)setRange(start,end);else $('range-caption').textContent=`请输入 ${firstLine} 至 ${lastLine} 内递增的源行范围。`;};
+$('axis-mode').onchange=event=>{axisMode=event.target.value;renderAll();};
+$('tool-filter').onchange=event=>{filter=event.target.value;pageIndex=0;renderAll();};
+$('time-range').onchange=event=>setRange(...activityRanges[Number(event.target.value)]);
+$('previous-page').onclick=()=>{pageIndex--;renderTable();};$('next-page').onclick=()=>{pageIndex++;renderTable();};
+$('theme').onclick=event=>{const dark=document.body.classList.toggle('dark');event.target.textContent=dark?'浅色':'深色';event.target.setAttribute('aria-pressed',String(dark));};
+$('auxiliary').ontoggle=()=>renderAll();
+let lastWidth=0;new ResizeObserver(entries=>{const width=entries[0].contentRect.width;if(Math.abs(width-lastWidth)>1){lastWidth=width;renderAll();}}).observe(document.querySelector('main'));
+renderAll();
+</script></body></html>
