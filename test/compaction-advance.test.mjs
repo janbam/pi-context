@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { didConversationAdvance } from "../dist/index.js";
+import { anchorAfterInitialSystemMessage, didConversationAdvance } from "../dist/index.js";
 
 const anchor = { id: "compact-turn", type: "message", message: { role: "assistant" } };
 
@@ -56,4 +56,25 @@ test("cancels for contextual entries, unknown types, or a missing compact anchor
     );
     assert.equal(didConversationAdvance(branchWith(), "missing"), true);
     assert.equal(didConversationAdvance(branchWith(), null), true);
+});
+
+test("compaction targets before the prompt head branch at the initial system message", () => {
+    const branch = [
+        { id: "model", type: "model_change" },
+        { id: "head", type: "message", message: { role: "system" } },
+        { id: "prompt", type: "message", message: { role: "user" } },
+        { id: "delta", type: "message", message: { role: "system" } },
+    ];
+    // Root and pre-prompt checkpoints would put the summary ahead of the prompt.
+    assert.equal(anchorAfterInitialSystemMessage(branch, "model"), "head");
+    // Later anchors, including ones after a later delta, and off-branch targets stay put.
+    assert.equal(anchorAfterInitialSystemMessage(branch, "head"), "head");
+    assert.equal(anchorAfterInitialSystemMessage(branch, "prompt"), "prompt");
+    assert.equal(anchorAfterInitialSystemMessage(branch, "sibling"), "sibling");
+    // A path without any system message has no head to protect.
+    assert.equal(anchorAfterInitialSystemMessage(branch.slice(0, 1), "model"), "model");
+
+    // An older root compaction left a summary before the head; clamping would keep it, so stay put.
+    const recompacted = [branch[0], { id: "old-summary", type: "branch_summary" }, ...branch.slice(1)];
+    assert.equal(anchorAfterInitialSystemMessage(recompacted, "model"), "model");
 });

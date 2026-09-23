@@ -79,6 +79,24 @@ export const didConversationAdvance = (
     });
 };
 
+/**
+ * Keep a compaction branch point from preceding the path's initial system message.
+ * A summary placed before it would lead the new path: providers with mid-conversation
+ * system messages would send the summary ahead of the prompt, and the continuation would
+ * have to redeclare the whole prompt without extension sections. Branching at the initial
+ * system message keeps the original prompt head, cache prefix, and sections in place.
+ * Moves only across passive setup entries: a conversation entry before the head (an older
+ * root compaction's summary, a legacy session's history) must still be dropped, so such
+ * targets stay put. Targets at or after the head, or not on `branch`, are unchanged too.
+ */
+export const anchorAfterInitialSystemMessage = (branch: readonly SessionEntry[], targetId: string): string => {
+    const systemIndex = branch.findIndex((entry) => entry.type === "message" && entry.message.role === "system");
+    const targetIndex = branch.findIndex((entry) => entry.id === targetId);
+    if (systemIndex === -1 || targetIndex === -1 || targetIndex >= systemIndex) return targetId;
+    const between = branch.slice(targetIndex + 1, systemIndex);
+    return between.every((entry) => PassiveCompactionEntryTypes.has(entry.type)) ? branch[systemIndex].id : targetId;
+};
+
 const resolveTargetId = (sm: SessionManager, target: string): string => {
     if (target.toLowerCase() === "root") {
         const tree = sm.getTree();
@@ -585,7 +603,8 @@ export default function (pi: ExtensionAPI) {
             const sm = ctx.sessionManager as SessionManager;
             const usageBeforeText = formatContextUsage(ctx.getContextUsage());
 
-            const tid = resolveTargetId(sm, params.target);
+            // Named targets resolve first; anything before the prompt head (e.g. root) branches at it.
+            const tid = anchorAfterInitialSystemMessage(sm.getBranch(), resolveTargetId(sm, params.target));
 
             const currentLeaf = sm.getLeafId();
             if (currentLeaf === tid) {
