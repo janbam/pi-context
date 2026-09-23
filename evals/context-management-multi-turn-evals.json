@@ -35,8 +35,8 @@
   },
   {
     "id": 3,
-    "category": "completed-task-new-task-should-compact",
-    "purpose": "上一轮 noisy task 已完成；下一轮用户开启完全不同的新任务。应先 compact 前一轮，再开始新任务。",
+    "category": "completed-task-short-new-task-no-compact",
+    "purpose": "新任务标签不是 compact 的充分条件：下一轮只读一个 package.json 就能答复，剩余工作太短，不应为低收益清理额外压缩。",
     "turns": [
       {
         "query": "我怀疑这个 skill 对 compact 的边界说明还不够稳。请你先做一轮偏研究型梳理：通读 `skills/context-management/SKILL.md`、`skills/context-management/references/search-research-and-reading.md`、`skills/context-management/references/development-and-troubleshooting.md`、`skills/context-management/references/planning-and-execution.md`、`skills/context-management/references/repeated-items-and-batch-work.md`、`skills/context-management/references/task-switching-and-cleanup.md`、`skills/context-management/references/retry-branch-and-pivot.md` 和 `evals/README.md`，找出“什么时候该 compact / 不该 compact”的主规则，并给我一个简洁结论：最关键的判断门槛是什么。这个过程可能会读很多文档，你自己管理上下文；但如果整个任务做完只剩最终答复，不要为了收尾自动做更重的动作。",
@@ -46,15 +46,14 @@
       },
       {
         "query": "现在换个完全不同的新任务：只看 `package.json`，告诉我这个项目有哪些 npm scripts，以及它们大概做什么。",
-        "must_include_tools": ["context_compact"],
-        "allowed_first_tools": ["context_timeline", "context_compact"]
+        "must_not_include_tools": ["context_compact"]
       }
     ]
   },
   {
     "id": 4,
-    "category": "same-task-next-phase-can-compact",
-    "purpose": "上一轮研究阶段已完成，下一轮进入同一任务的下一阶段；应允许在阶段边界先 compact，再继续推进。",
+    "category": "explicit-user-compaction-override",
+    "purpose": "用户明确要求先压缩研究阶段的对照案例；只检查用户指令遵循，不作为自主 compact 净收益判断的正例。",
     "turns": [
       {
         "query": "我怀疑这个 skill 对 compact 的边界说明还不够稳。请你先做一轮偏研究型梳理：通读 `skills/context-management/SKILL.md`、`skills/context-management/references/search-research-and-reading.md`、`skills/context-management/references/development-and-troubleshooting.md`、`skills/context-management/references/planning-and-execution.md`、`skills/context-management/references/repeated-items-and-batch-work.md`、`skills/context-management/references/task-switching-and-cleanup.md`、`skills/context-management/references/retry-branch-and-pivot.md` 和 `evals/README.md`，找出“什么时候该 compact / 不该 compact”的主规则，并给我一个简洁结论：最关键的判断门槛是什么。这个过程可能会读很多文档，你自己管理上下文；但如果整个任务做完只剩最终答复，不要为了收尾自动做更重的动作。",
@@ -64,6 +63,104 @@
       },
       {
         "query": "刚才的研究阶段到这里就够了。现在进入同一任务的下一阶段：基于你刚才的结论，指出应该改哪些文档文件、每个文件改什么。开始前先把研究阶段压成可继续的摘要，再从干净状态往下推。",
+        "must_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_timeline", "context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 5,
+    "category": "phase-boundary-high-raw-overlap-no-compact",
+    "purpose": "同一个研究到验证的阶段边界：600 行原始审计内容马上仍要逐行使用，不能仅因阶段完成就压缩再重读。与 case 6 配对。",
+    "turns": [
+      {
+        "query": "做一个本地审计演练，不改仓库文件、不联网。用 Python 标准库 tempfile.mkdtemp(prefix='context-audit-') 创建独立临时目录，并在最终答案保留绝对路径。生成 audit.csv：表头 id,lane,amount,status,detail；i 从 1 到 600，id=i，lane=['alpha','beta','gamma'][i%3]，amount=i%10，status 在 i%10==0 时为 blocked 否则 ready，detail 为字符串 'item {i}: legacy routing was checked against the local ledger; retain the original row for later provenance and wording verification.'（替换 {i}）。研究阶段请完整读取这 600 行，分三次各 200 行输出，避免截断；然后用代码独立统计 rows、total_amount、blocked、各 lane 的同类统计，写到临时目录 summary.json。最终只给目录路径和统计，不贴完整原始数据。下一轮再做验证；当前轮不要提前实现验证程序。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"]
+      },
+      {
+        "query": "研究阶段结束，现在进入同一审计任务的验证阶段。接下来仍然要逐行核对刚才全部 600 行的原始措辞和字段关系，而不是只检查统计。在原临时目录编写 verify_rows.py，对每行检查 id 顺序、lane、amount、status、detail 的完整字符串，并分三批各报告 200 行检查结果；再制作三个独立的临时 CSV 副本，分别将 id=120 的 detail 改为 'truncated'、id=240 的 status 改为 ready、id=360 的 lane 改为 gamma。确认验证器各自定位正确行号和错误字段，原始 CSV 仍全部通过。最后给出原始通过行数及三个异常的 id/field。仅操作本次临时目录，不联网。",
+        "must_not_include_tools": ["context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 6,
+    "category": "phase-boundary-low-raw-overlap-compact",
+    "purpose": "与 case 5 相同的研究阶段和阶段标签，但后续只消费小型已核实汇总，原始审计措辞不再使用；多步规划工作值得清除大段冷数据。",
+    "turns": [
+      {
+        "query": "做一个本地审计演练，不改仓库文件、不联网。用 Python 标准库 tempfile.mkdtemp(prefix='context-audit-') 创建独立临时目录，并在最终答案保留绝对路径。生成 audit.csv：表头 id,lane,amount,status,detail；i 从 1 到 600，id=i，lane=['alpha','beta','gamma'][i%3]，amount=i%10，status 在 i%10==0 时为 blocked 否则 ready，detail 为字符串 'item {i}: legacy routing was checked against the local ledger; retain the original row for later provenance and wording verification.'（替换 {i}）。研究阶段请完整读取这 600 行，分三次各 200 行输出，避免截断；然后用代码独立统计 rows、total_amount、blocked、各 lane 的同类统计，写到临时目录 summary.json。最终只给目录路径和统计，不贴完整原始数据。下一轮再做验证；当前轮不要提前实现验证程序。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"]
+      },
+      {
+        "query": "研究阶段结束，现在进入同一审计任务的验证阶段。业务已确认 summary.json，后续规划只以汇总为输入，不再核查原始措辞。在原临时目录实现 planner.py：每个 lane 的 ready 数为 rows-blocked；给定正整数 capacity，各 lane 分别装箱，每箱最多 capacity 个 ready 项，最后一个箱可不足；输出各 lane 的箱数、最后一箱数量及全部箱数。先写并运行标准库 unittest，覆盖空输入、零 ready、恰好整除、余数、非法 capacity、三个 lane；再对 capacity=1..20 全部运行，将结果写为 plans.json，独立核对每个方案容量守恒和所有 ready 项恰好计一次。最后报告 capacity=10、16、20 时的全部箱数及每 lane 最后一箱数量、测试结果和产物路径。仅操作本次临时目录，不联网。",
+        "must_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_timeline", "context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 7,
+    "category": "review-wait-hot-patch-no-compact",
+    "purpose": "等待 review 并不使上下文自动变冷：刚读的补丁和诊断输出将在紧邻的修复中再次使用。与 case 8 配对。",
+    "turns": [
+      {
+        "query": "做本地 review 演练，不改仓库、不联网。用 tempfile.mkdtemp(prefix='context-review-') 建独立临时目录，写 threshold.py，其唯一函数 is_alert(value, limit) 返回 value > limit；写标准库 unittest 文件，规格是 value >= limit 时报警，测试 (9,10)->False、(10,10)->True、(11,10)->True。读取源码和测试，运行测试并报告真实失败点，不修复。我们现在等 reviewer 确认这个边界规格，下一轮大概率就在这份补丁上继续；最终给目录绝对路径、失败测试和建议的一行修复。",
+        "must_not_include_tools": ["context_compact"]
+      },
+      {
+        "query": "reviewer 确认 value 等于 limit 也必须报警。现在在刚才临时目录应用最小修复，复用刚读的源码和诊断，重跑原有三个测试并加上 (0,0)->True、(-2,-1)->False、(-1,-1)->True。不要改其他行为，不动仓库文件。给出临时文件 diff、六项测试结果和 threshold.py 路径。",
+        "must_not_include_tools": ["context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 8,
+    "category": "review-wait-cold-monitoring-compact",
+    "purpose": "同样等待 review，但大量已结束的监测明细只需小型结论，随后做多步离线容量规划；冷段清理有净收益。",
+    "turns": [
+      {
+        "query": "做本地 review 等待期的监测演练，不改仓库、不联网。用 tempfile.mkdtemp(prefix='context-monitor-') 建独立临时目录。生成 monitor.log 共 600 行；i 从 1 到 600，每行格式为 'tick={i} queue={i%5} errors=0 note=local review gate is still pending; no deployed state changed; this observation is informational and has no outstanding incident'（替换两个表达式）。将全部日志分六次各 100 行读取输出，确认无错误并用代码求 samples、max_queue、errors_total，保存 monitor-summary.json。最终给临时目录绝对路径和这三个统计，等待 reviewer 的下一步安排。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"]
+      },
+      {
+        "query": "reviewer 还没回复；这批监测已关闭且没有事故，保留汇总即可，不用再逐条调查。等待期间做下一项离线容量工作：在原临时目录编写 drain.py，每个 tick 先接收 arrivals[t] 再最多处理 capacity 项，记录处理后队列和累计完成数；用标准库 unittest 覆盖空流量、全零、容量恰好够、突发堆积、非法 capacity、流量守恒。然后对 arrivals=[2,5,0,4] 重复 20 次，分别跑 capacity=1..6，把每种最终队列、峰值队列和完成数写为 drain-results.json，并用另一个简单实现交叉验证。最后给监测三项汇总、capacity=2 与 3 的最终队列/峰值/完成数以及测试结果。仅操作本次临时目录，不联网。",
+        "must_include_tools": ["context_compact"],
+        "allowed_first_tools": ["context_timeline", "context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 9,
+    "category": "fresh-checkpoint-hot-script-no-compact",
+    "purpose": "新 checkpoint 是位置标记，不代表刚读的下一步必需脚本可丢弃；与 case 10 的真正冷段作对照。",
+    "turns": [
+      {
+        "query": "做一个本地脚本维护演练，不改仓库、不联网。用 tempfile.mkdtemp(prefix='context-drain-') 建独立临时目录，写 drain.py，包含函数 drain(arrivals, capacity)：capacity<=0 时 raise ValueError；queue=done=peak=0；依次接收每个 arrival，把 min(queue,capacity) 从 queue 转入 done，每次处理后更新 peak；最后返回 {'queue':queue,'peak':peak,'done':done}。读回完整脚本，验证 drain([2,5,0,4],3) 的结果并报告临时目录绝对路径。读完后建一个 checkpoint，便于下一轮继续这份脚本。当前只需读回和一次运行，不要提前写测试。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"]
+      },
+      {
+        "query": "继续刚才的 drain.py。就在原临时目录为刚读的函数增加标准库 unittest：空流量、全零、容量恰好够、突发堆积、非法 capacity、流量守恒。再实现一个简单的独立参考版本做交叉验证，对 arrivals=[2,5,0,4] 重复 20 次、capacity=1..6 分别运行，将最终队列、峰值队列、完成数保存为 drain-results.json。最后给 capacity=2 与 3 的三项结果、测试结果和路径。仅操作本次临时目录，不联网。",
+        "must_not_include_tools": ["context_compact"]
+      }
+    ]
+  },
+  {
+    "id": 10,
+    "category": "checkpoint-with-real-stale-segment-compact",
+    "purpose": "与 case 9 相同的下一步脚本工作，但 anchor 后积累了完整且已结案的冷监测；应选择真正可移除冷段的 anchor，而非把新 checkpoint 当充分条件。",
+    "turns": [
+      {
+        "query": "做一个本地脚本维护演练，不改仓库、不联网。用 tempfile.mkdtemp(prefix='context-drain-') 建独立临时目录，写 drain.py，包含函数 drain(arrivals, capacity)：capacity<=0 时 raise ValueError；queue=done=peak=0；依次接收每个 arrival，把 min(queue,capacity) 从 queue 转入 done，每次处理后更新 peak；最后返回 {'queue':queue,'peak':peak,'done':done}。读回完整脚本，验证 drain([2,5,0,4],3) 的结果，记住临时目录绝对路径；此时建一个 checkpoint 便于之后继续脚本。接着处理一段历史监测：在同目录生成 monitor.log 共 600 行，i 从 1 到 600，格式 'tick={i} queue={i%5} errors=0 note=local review gate is still pending; no deployed state changed; this observation is informational and has no outstanding incident'（替换表达式）。分六次各 100 行完整读取输出，用代码确认 samples、max_queue、errors_total，保存 monitor-summary.json。这段监测到此结案，下一轮回到脚本维护；当前最终只给脚本单次结果、监测汇总和目录路径。",
+        "must_include_tools": ["context_checkpoint"],
+        "must_not_include_tools": ["context_compact"]
+      },
+      {
+        "query": "继续刚才的 drain.py。就在原临时目录为刚读的函数增加标准库 unittest：空流量、全零、容量恰好够、突发堆积、非法 capacity、流量守恒。再实现一个简单的独立参考版本做交叉验证，对 arrivals=[2,5,0,4] 重复 20 次、capacity=1..6 分别运行，将最终队列、峰值队列、完成数保存为 drain-results.json。最后给 capacity=2 与 3 的三项结果、测试结果和路径。仅操作本次临时目录，不联网。",
         "must_include_tools": ["context_compact"],
         "allowed_first_tools": ["context_timeline", "context_compact"]
       }
