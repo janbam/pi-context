@@ -2,12 +2,11 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { wrapSystemNotification } from "./utils.js";
+import { ContextToolNames } from "./utils.js";
 
 /** Durable session-global state owned by pi-context. */
 export type AcmSessionState = {
     enabled: boolean;
-    notificationPending?: boolean;
 };
 
 /** User configuration that initializes ACM for new sessions. */
@@ -21,8 +20,15 @@ export type AcmAction = "enable" | "disable";
 /** Session-global namespace key for pi-context's effective ACM state. */
 export const AcmSessionStateKey = "pi-context.acm";
 
-/** Custom message type used for the model-only effective-state projection. */
-export const AcmContextMessageType = "pi-context-acm-state";
+/** System prompt section name; pi renders it as `<acm>...</acm>`. */
+export const AcmPromptSectionName = "acm";
+
+/**
+ * Prompt section text present only while ACM is enabled. Must stay byte-identical
+ * across runs: any change rewrites the section and costs a prompt-cache miss.
+ */
+export const AcmPromptSectionText =
+    "Agentic context management is enabled for this session. Use context_checkpoint, context_timeline, and context_compact according to the context-management skill.";
 
 /** Backward-compatible behavior when no pi-context config exists. */
 const DefaultAcmConfig: AcmConfig = { autoEnable: false };
@@ -97,30 +103,13 @@ export function readAcmEnabled(state: AcmSessionState | undefined): boolean | un
     return state.enabled;
 }
 
-/** Read whether a state transition still needs its one-shot model notification. */
-export function readAcmNotificationPending(state: AcmSessionState | undefined): boolean {
-    if (state?.notificationPending === undefined) return false;
-    if (typeof state.notificationPending !== "boolean") {
-        throw new Error(`Invalid ${AcmSessionStateKey} session state: notificationPending must be boolean`);
-    }
-    return state.notificationPending;
-}
-
-/** Build the wrapped ACM state notification shown after an effective transition. */
-export function createAcmContextMessage(enabled: boolean, manuallySet = false) {
-    const state = enabled ? "enabled" : "disabled";
-    const policy = enabled
-        ? "Use context_checkpoint, context_timeline, and context_compact according to the context-management skill."
-        : "Do not call context_checkpoint, context_timeline, or context_compact unless the user enables it with /acm.";
-    const source = manuallySet ? `The user manually ${state} it with /acm. ` : "";
-
-    return {
-        role: "custom" as const,
-        customType: AcmContextMessageType,
-        content: wrapSystemNotification(
-            `Agentic context management is ${state} for this session. ${source}${policy}`,
-        ),
-        display: false,
-        timestamp: Date.now(),
-    };
+/**
+ * Derive the active tool loadout for an ACM state: pi-context's tools are present
+ * iff enabled. Only missing names are appended or present names removed, so the
+ * result differs from the input exactly when its length does.
+ */
+export function applyAcmToolLoadout(activeTools: readonly string[], enabled: boolean): string[] {
+    return enabled
+        ? [...activeTools, ...ContextToolNames.filter((name) => !activeTools.includes(name))]
+        : activeTools.filter((name) => !ContextToolNames.includes(name));
 }

@@ -15,7 +15,7 @@ Core rhythm:
 
 ## Runtime availability
 
-When an ACM command changes the effective session state, one model-only system notification reports the final state immediately before the next real user message. The notification is consumed by that first model call; redundant commands and later calls emit nothing. When ACM is disabled, do not call the context tools or ask the user to enable them unless context management is materially useful for the current task. `/acm`, `/acm enable`, and `/acm disable` change the durable session-wide state, and repeated state changes before the next turn collapse into one notification containing only the final effective state.
+Agentic context management is enabled for the session exactly when the context tools are available; an `<acm>` system prompt section usually accompanies them. The user controls this with `/acm`, `/acm enable`, and `/acm disable`. When the tools are absent, do not ask the user to enable them unless context management is materially useful for the current task.
 
 Use only these tools:
 

@@ -7,23 +7,37 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import registerPiContext from "../dist/index.js";
 import {
-    AcmContextMessageType,
+    AcmPromptSectionName,
+    AcmPromptSectionText,
     AcmSessionStateKey,
-    createAcmContextMessage,
+    applyAcmToolLoadout,
     isNewSessionStart,
     parseAcmConfig,
     readAcmEnabled,
-    readAcmNotificationPending,
     resolveAcmAction,
 } from "../dist/acm.js";
-import { wrapSystemNotification } from "../dist/utils.js";
+import { ContextToolNames } from "../dist/utils.js";
 
-function createHarness({ persistedState, entries = [], sessionManager: providedSessionManager } = {}) {
+/** Pi activates every registered extension tool when it builds a fresh runtime. */
+const InitialActiveTools = ["read", "bash", ...ContextToolNames];
+
+/**
+ * @param registry Tool names pi's registry holds; like pi, setActiveTools silently drops others
+ *   (models --tools/--exclude-tools filtering).
+ */
+function createHarness({
+    persistedState,
+    entries = [],
+    sessionManager: providedSessionManager,
+    registry = InitialActiveTools,
+} = {}) {
     const commands = new Map();
     const handlers = new Map();
     const tools = new Map();
     const state = new Map();
     const writes = [];
+    const toolWrites = [];
+    let activeTools = InitialActiveTools.filter((name) => registry.includes(name));
     const sentUserMessages = [];
     const sentMessages = [];
     const notifications = [];
@@ -67,6 +81,11 @@ function createHarness({ persistedState, entries = [], sessionManager: providedS
         },
         sendMessage: (message, options) => sentMessages.push({ message, options }),
         setLabel: () => {},
+        getActiveTools: () => [...activeTools],
+        setActiveTools: (names) => {
+            toolWrites.push([...names]);
+            activeTools = names.filter((name) => registry.includes(name));
+        },
     };
 
     registerPiContext(pi);
@@ -77,6 +96,10 @@ function createHarness({ persistedState, entries = [], sessionManager: providedS
         tools,
         state,
         writes,
+        toolWrites,
+        get activeTools() { return activeTools; },
+        /** Simulate tree navigation restoring an older transcript-recorded loadout. */
+        restoreTools(names) { activeTools = [...names]; },
         sentUserMessages,
         sentMessages,
         notifications,
@@ -89,8 +112,17 @@ function createHarness({ persistedState, entries = [], sessionManager: providedS
             }
             return result;
         },
+        /** Run before_agent_start on fresh base options, as pi does per real prompt. */
+        async promptSections() {
+            const event = { systemPromptOptions: { sections: {} } };
+            await this.emit("before_agent_start", event);
+            return event.systemPromptOptions.sections;
+        },
     };
 }
+
+const hasContextTools = (names) => ContextToolNames.every((name) => names.includes(name));
+const hasNoContextTools = (names) => ContextToolNames.every((name) => !names.includes(name));
 
 test("parses the one-field TOML configuration", () => {
     assert.deepEqual(parseAcmConfig("auto_enable = true\n"), { autoEnable: true });
@@ -119,31 +151,22 @@ test("distinguishes new lifecycle starts from resumed conversations", () => {
     assert.equal(isNewSessionStart("fork", []), false);
 });
 
-test("validates persisted ACM state and wraps model-only projections", () => {
+test("validates persisted ACM state", () => {
     assert.equal(readAcmEnabled(undefined), undefined);
     assert.equal(readAcmEnabled({ enabled: true }), true);
     assert.throws(() => readAcmEnabled({ enabled: "yes" }), /enabled must be boolean/);
-    assert.equal(readAcmNotificationPending(undefined), false);
-    assert.equal(readAcmNotificationPending({ enabled: true }), false);
-    assert.equal(readAcmNotificationPending({ enabled: true, notificationPending: true }), true);
-    assert.throws(
-        () => readAcmNotificationPending({ enabled: true, notificationPending: "yes" }),
-        /notificationPending must be boolean/,
-    );
-    assert.equal(
-        wrapSystemNotification("state"),
-        "<system-notification>\nstate\n</system-notification>",
-    );
+});
 
-    const message = createAcmContextMessage(false);
-    assert.equal(message.role, "custom");
-    assert.equal(message.customType, AcmContextMessageType);
-    assert.match(message.content, /^<system-notification>\n/);
-    assert.match(message.content, /disabled/);
-    assert.doesNotMatch(message.content, /manually/);
-    assert.match(createAcmContextMessage(true, true).content, /manually enabled/);
-    assert.match(message.content, /\n<\/system-notification>$/);
-    assert.equal(message.display, false);
+test("tool loadout gains or loses only pi-context tools and keeps other tools in order", () => {
+    const withContextMidList = ["read", "context_timeline", "bash"];
+    assert.deepEqual(
+        applyAcmToolLoadout(withContextMidList, true),
+        ["read", "context_timeline", "bash", "context_checkpoint", "context_compact"],
+    );
+    assert.deepEqual(applyAcmToolLoadout(withContextMidList, false), ["read", "bash"]);
+    // Already-matching loadouts come back unchanged, so no setActiveTools write is needed.
+    assert.deepEqual(applyAcmToolLoadout(InitialActiveTools, true), InitialActiveTools);
+    assert.deepEqual(applyAcmToolLoadout(["read"], false), ["read"]);
 });
 
 test("auto-enables only a new session without dispatching commands at startup", async () => {
@@ -159,8 +182,9 @@ test("auto-enables only a new session without dispatching commands at startup", 
         assert.deepEqual(harness.writes, [{ key: AcmSessionStateKey, value: { enabled: true } }]);
         // The command context is acquired lazily by context_compact, never at startup.
         assert.deepEqual(harness.sentUserMessages, []);
-        const context = await harness.emit("context", { messages: [] });
-        assert.deepEqual(context.messages, []);
+        // Tools were already active from pi's initial loadout; enabling adds only the section.
+        assert.deepEqual(harness.toolWrites, []);
+        assert.deepEqual(await harness.promptSections(), { [AcmPromptSectionName]: AcmPromptSectionText });
     } finally {
         if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
         else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -184,10 +208,7 @@ test("uses pi-core session-global state without creating conversation entries", 
         assert.equal(JSON.stringify(sessionManager.getTree()).includes("session_state"), false);
 
         await harness.commands.get("acm").handler("disable", harness.commandContext);
-        assert.deepEqual(sessionManager.getSessionState(AcmSessionStateKey), {
-            enabled: false,
-            notificationPending: true,
-        });
+        assert.deepEqual(sessionManager.getSessionState(AcmSessionStateKey), { enabled: false });
     } finally {
         if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
         else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -200,41 +221,16 @@ test("restores enabled and disabled sessions without applying auto-enable again"
     await enabled.emit("session_start", { reason: "resume" });
     assert.equal(enabled.writes.length, 0);
     assert.equal(enabled.sentUserMessages.length, 0);
-    const resumedUserMessage = { role: "user", content: "continue", timestamp: 1 };
-    const resumedContext = await enabled.emit("context", { messages: [resumedUserMessage] });
-    assert.deepEqual(resumedContext.messages, [resumedUserMessage]);
+    assert.deepEqual(enabled.toolWrites, []);
+    assert.deepEqual(await enabled.promptSections(), { [AcmPromptSectionName]: AcmPromptSectionText });
 
     const disabled = createHarness({ persistedState: { enabled: false }, entries: [{ type: "message" }] });
     await disabled.emit("session_start", { reason: "resume" });
     assert.equal(disabled.writes.length, 0);
     assert.equal(disabled.sentUserMessages.length, 0);
-
-    for (const name of ["context_checkpoint", "context_timeline", "context_compact"]) {
-        const result = await disabled.tools.get(name).execute("tool-call", {}, undefined, undefined, {});
-        assert.match(result.content[0].text, /disabled/);
-    }
-});
-
-test("preserves an unconsumed state notification across reload", async () => {
-    const source = createHarness({ persistedState: { enabled: false }, entries: [{ type: "message" }] });
-    await source.emit("session_start", { reason: "resume" });
-    await source.commands.get("acm").handler("enable", source.commandContext);
-
-    const reloaded = createHarness({
-        persistedState: source.state.get(AcmSessionStateKey),
-        entries: [{ type: "message" }],
-    });
-    await reloaded.emit("session_start", { reason: "reload" });
-    const userMessage = { role: "user", content: "continue", timestamp: 1 };
-    const firstCall = await reloaded.emit("context", { messages: [userMessage] });
-
-    assert.equal(firstCall.messages[0].customType, AcmContextMessageType);
-    assert.match(firstCall.messages[0].content, /manually enabled/);
-    assert.deepEqual(firstCall.messages[1], userMessage);
-    assert.deepEqual(reloaded.state.get(AcmSessionStateKey), { enabled: true });
-
-    const secondCall = await reloaded.emit("context", { messages: [userMessage] });
-    assert.deepEqual(secondCall.messages, [userMessage]);
+    // Disabled sessions expose neither the tools nor the section to the model.
+    assert.deepEqual(disabled.activeTools, ["read", "bash"]);
+    assert.deepEqual(await disabled.promptSections(), {});
 });
 
 test("initializes a legacy resumed session as disabled rather than applying config", async () => {
@@ -257,60 +253,56 @@ test("/acm toggles or sets state without redundant durable writes", async () => 
     await acm.handler("invalid", harness.commandContext);
 
     assert.deepEqual(harness.writes, [
-        { key: AcmSessionStateKey, value: { enabled: true, notificationPending: true } },
-        { key: AcmSessionStateKey, value: { enabled: false, notificationPending: true } },
+        { key: AcmSessionStateKey, value: { enabled: true } },
+        { key: AcmSessionStateKey, value: { enabled: false } },
     ]);
+    // One loadout write at session start (disable) plus one per effective transition.
+    assert.equal(harness.toolWrites.length, 3);
     assert.match(harness.notifications.at(-1).message, /Usage/);
 });
 
-test("reports an effective state change once before the latest user message", async () => {
+test("/acm swaps tools and the prompt section; enabled runs repeat identical section text", async () => {
     const harness = createHarness({ persistedState: { enabled: false }, entries: [{ type: "message" }] });
     await harness.emit("session_start", { reason: "resume" });
     const acm = harness.commands.get("acm");
-    const olderUserMessage = { role: "user", content: "earlier", timestamp: 1 };
-    const assistantMessage = { role: "assistant", content: [], timestamp: 2 };
-    const currentUserMessage = { role: "user", content: "continue", timestamp: 3 };
-    const ordinaryMessages = [olderUserMessage, assistantMessage, currentUserMessage];
 
     await acm.handler("enable", harness.commandContext);
-    const changed = await harness.emit("context", { messages: ordinaryMessages });
-    assert.deepEqual(changed.messages.slice(0, 2), [olderUserMessage, assistantMessage]);
-    assert.equal(changed.messages[2].customType, AcmContextMessageType);
-    assert.match(changed.messages[2].content, /manually enabled/);
-    assert.match(changed.messages[2].content, /^<system-notification>\n/);
-    assert.deepEqual(changed.messages[3], currentUserMessage);
+    assert.ok(hasContextTools(harness.activeTools));
+    // Byte-identical text on every run means no transcript delta and no cache miss.
+    const first = await harness.promptSections();
+    const second = await harness.promptSections();
+    assert.deepEqual(first, { [AcmPromptSectionName]: AcmPromptSectionText });
+    assert.equal(second[AcmPromptSectionName], first[AcmPromptSectionName]);
 
-    // Consuming the pending transition prevents repeats within the same agent run.
-    const laterModelCall = await harness.emit("context", { messages: ordinaryMessages });
-    assert.deepEqual(laterModelCall.messages, ordinaryMessages);
-
-    // An idempotent command does not create another notification.
-    await acm.handler("enable", harness.commandContext);
-    const redundantCommand = await harness.emit("context", { messages: ordinaryMessages });
-    assert.deepEqual(redundantCommand.messages, ordinaryMessages);
+    await acm.handler("disable", harness.commandContext);
+    assert.ok(hasNoContextTools(harness.activeTools));
+    assert.deepEqual(await harness.promptSections(), {});
 });
 
-test("model context contains only the final effective ACM state", async () => {
+test("enabled ACM omits the prompt section when a tool allowlist filtered the context tools out", async () => {
+    const harness = createHarness({
+        persistedState: { enabled: true },
+        entries: [{ type: "message" }],
+        registry: ["read", "bash"],
+    });
+    await harness.emit("session_start", { reason: "resume" });
+    // The section must not point the model at tools it cannot call.
+    assert.deepEqual(harness.activeTools, ["read", "bash"]);
+    assert.deepEqual(await harness.promptSections(), {});
+});
+
+test("tree navigation re-adds context tools that an older transcript loadout lacks", async () => {
     const harness = createHarness({ persistedState: { enabled: false }, entries: [{ type: "message" }] });
     await harness.emit("session_start", { reason: "resume" });
-    const acm = harness.commands.get("acm");
+    await harness.commands.get("acm").handler("enable", harness.commandContext);
 
-    await acm.handler("enable", harness.commandContext);
-    await acm.handler("disable", harness.commandContext);
-    await acm.handler("enable", harness.commandContext);
+    // Compacting to an anchor recorded before /acm enable restores its tool-less loadout.
+    harness.restoreTools(["read", "bash"]);
+    await harness.emit("session_tree", {});
+    assert.ok(hasContextTools(harness.activeTools));
 
-    const priorProjection = createAcmContextMessage(false);
-    const ordinaryMessage = { role: "user", content: "continue", timestamp: 1 };
-    const result = await harness.emit("context", { messages: [priorProjection, ordinaryMessage] });
-    const projections = result.messages.filter(
-        (message) => message.role === "custom" && message.customType === AcmContextMessageType,
-    );
-
-    assert.equal(projections.length, 1);
-    assert.match(projections[0].content, /manually enabled/);
-    assert.deepEqual(result.messages, [projections[0], ordinaryMessage]);
-
-    // The projection is consumed by the first model call, even before agent_end.
-    const nextResult = await harness.emit("context", { messages: [ordinaryMessage] });
-    assert.deepEqual(nextResult.messages, [ordinaryMessage]);
+    // Navigation whose loadout already matches writes nothing.
+    const writes = harness.toolWrites.length;
+    await harness.emit("session_tree", {});
+    assert.equal(harness.toolWrites.length, writes);
 });

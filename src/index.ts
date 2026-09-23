@@ -12,17 +12,18 @@ import {
     type ToolCall,
 } from "@earendil-works/pi-ai";
 import {
-    AcmContextMessageType,
+    AcmPromptSectionName,
+    AcmPromptSectionText,
     AcmSessionStateKey,
-    createAcmContextMessage,
+    applyAcmToolLoadout,
     isNewSessionStart,
     loadAcmConfig,
     readAcmEnabled,
-    readAcmNotificationPending,
     resolveAcmAction,
     type AcmSessionState,
 } from "./acm.js";
 import {
+    ContextToolNames,
     describeHistoryInterval,
     formatContextUsage,
     isContextTool as isInternal,
@@ -136,7 +137,6 @@ export default function (pi: ExtensionAPI) {
     let runtimeActive = true;
     let commandCtx: ExtensionCommandContext | null = null;
     let compactRequest: CompactRequest | null = null;
-    let stateNotificationPending = false;
     let pendingCommandContext: Promise<ExtensionCommandContext> | null = null;
     let resolveCommandContext: ((ctx: ExtensionCommandContext) => void) | undefined;
     let rejectCommandContext: ((error: Error) => void) | undefined;
@@ -153,22 +153,22 @@ export default function (pi: ExtensionAPI) {
         });
     };
 
-    /** Persist effective state together with any unconsumed transition notification. */
+    /** Persist the effective ACM state session-globally, outside the conversation tree. */
     const persistAcmState = (): void => {
-        pi.setSessionState(AcmSessionStateKey, {
-            enabled: acmEnabled,
-            ...(stateNotificationPending ? { notificationPending: true } : {}),
-        });
+        pi.setSessionState(AcmSessionStateKey, { enabled: acmEnabled });
     };
 
-    /** Return a consistent tool result when session policy disables ACM. */
-    const disabledToolResult = () => ({
-        content: [{
-            type: "text" as const,
-            text: "Agentic context management is disabled for this session. Ask the user to run `/acm enable` before using context tools.",
-        }],
-        details: {},
-    });
+    /**
+     * Make the durable tool loadout match ACM state. Uses setActiveTools, not per-run
+     * selectedTools: triggered runs rebuild from the live loadout, so per-run edits
+     * would flap the tools on every compaction continuation. Skips no-op writes so an
+     * unchanged state never produces a tool delta.
+     */
+    const syncAcmTools = (): void => {
+        const active = pi.getActiveTools();
+        const next = applyAcmToolLoadout(active, acmEnabled);
+        if (next.length !== active.length) pi.setActiveTools(next);
+    };
 
     /** Record a session-bound command context and settle any pending acquisition with it. */
     const captureCommandContext = (ctx: ExtensionCommandContext): void => {
@@ -223,10 +223,10 @@ export default function (pi: ExtensionAPI) {
             acmEnabled = nextEnabled;
             if (!nextEnabled) compactRequest = null;
 
-            // Collapse effective changes into one durable final-state notice for the next model call.
+            // Effective changes persist and swap the tool loadout; the prompt section follows on the next run.
             if (stateChanged) {
-                stateNotificationPending = true;
                 persistAcmState();
+                syncAcmTools();
             }
             ctx.ui.notify(`Agentic Context Management ${acmEnabled ? "enabled" : "disabled"}.`, "info");
         },
@@ -248,14 +248,29 @@ export default function (pi: ExtensionAPI) {
         const persistedEnabled = readAcmEnabled(persistedState);
         if (persistedEnabled !== undefined) {
             acmEnabled = persistedEnabled;
-            stateNotificationPending = readAcmNotificationPending(persistedState);
         } else {
             // Configuration initializes only new sessions; resumed legacy sessions default off.
             acmEnabled = isNewSessionStart(event.reason, ctx.sessionManager.getEntries())
                 ? loadAcmConfig().autoEnable
                 : false;
-            stateNotificationPending = false;
             persistAcmState();
+        }
+        syncAcmTools();
+    });
+
+    pi.on("session_tree", () => {
+        // Tree navigation restores the loadout recorded in the target path's transcript,
+        // which may predate the current ACM state (e.g. compacting to an anchor before /acm enable).
+        syncAcmTools();
+    });
+
+    pi.on("before_agent_start", (event) => {
+        // Section present iff enabled and the tools survived --tools/--exclude-tools filtering;
+        // omitting it removes it. Constant text keeps runs delta-free. Triggered runs skip this
+        // hook and keep whatever section the transcript already has.
+        const active = pi.getActiveTools();
+        if (acmEnabled && ContextToolNames.every((name) => active.includes(name))) {
+            event.systemPromptOptions.sections[AcmPromptSectionName] = AcmPromptSectionText;
         }
     });
 
@@ -265,27 +280,6 @@ export default function (pi: ExtensionAPI) {
         commandCtx = null;
         compactRequest = null;
         rejectCommandContext?.(new Error("context_compact: session closed while acquiring command context."));
-    });
-
-    pi.on("context", (event) => {
-        // Remove stale projections defensively without emitting on ordinary model calls.
-        const messages = event.messages.filter(
-            (message) => !(message.role === "custom" && message.customType === AcmContextMessageType),
-        );
-        if (!stateNotificationPending) return { messages };
-
-        // Place the one-shot state notice beside the latest real prompt it qualifies.
-        let insertionIndex = messages.length;
-        for (let index = messages.length - 1; index >= 0; index--) {
-            if (messages[index].role === "user") {
-                insertionIndex = index;
-                break;
-            }
-        }
-        messages.splice(insertionIndex, 0, createAcmContextMessage(acmEnabled, true));
-        stateNotificationPending = false;
-        persistAcmState();
-        return { messages };
     });
 
     // Helper: Check if a checkpoint name already exists in the tree
@@ -311,8 +305,6 @@ export default function (pi: ExtensionAPI) {
         description: ContextCheckpointDescription,
         parameters: ContextCheckpointParams,
         async execute(_id, params: Static<typeof ContextCheckpointParams>, _signal, _onUpdate, ctx) {
-            if (!acmEnabled) return disabledToolResult();
-
             const sm = ctx.sessionManager as SessionManager;
 
             // Deduplication check: ensure checkpoint name is unique
@@ -381,8 +373,6 @@ export default function (pi: ExtensionAPI) {
         description: ContextTimelineDescription,
         parameters: ContextTimelineParams,
         async execute(_id, params: Static<typeof ContextTimelineParams>, _signal, _onUpdate, ctx) {
-            if (!acmEnabled) return disabledToolResult();
-
             const sm = ctx.sessionManager as SessionManager;
             const branch = sm.getBranch();
             const currentLeafId = sm.getLeafId();
@@ -573,8 +563,6 @@ export default function (pi: ExtensionAPI) {
         description: ContextCompactDescription,
         parameters: ContextCompactParams,
         async execute(_id, params: Static<typeof ContextCompactParams>, _signal, _onUpdate, ctx) {
-            if (!acmEnabled) return disabledToolResult();
-
             // Anchor at the assistant message containing this summary, not the
             // current leaf: sibling tools/hooks may already have appended entries.
             const requestLeaf = [...ctx.sessionManager.getBranch()].reverse().find((entry) =>
@@ -584,7 +572,12 @@ export default function (pi: ExtensionAPI) {
             if (!requestLeaf) {
                 throw new Error("context_compact: cannot locate the requesting tool call in session history.");
             }
+            // The tool is inactive while disabled, but a call already in flight can outlive /acm disable.
+            if (!acmEnabled) {
+                throw new Error("context_compact: agentic context management is disabled for this session.");
+            }
             await ensureCommandContext();
+            // Disable or session replacement can also land during acquisition.
             if (!runtimeActive || !acmEnabled || _signal?.aborted) {
                 throw new Error("context_compact: cancelled before compaction started.");
             }

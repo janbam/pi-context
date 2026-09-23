@@ -6,17 +6,12 @@ import registerContext from "../dist/index.js";
 for (const checkpoint of [undefined, "review-start"]) {
     test(`timeline reports structure without compact advice (${checkpoint ?? "no checkpoint"})`, async () => {
         const tools = new Map();
-        const events = new Map();
         registerContext({
             registerTool: (tool) => tools.set(tool.name, tool),
             registerCommand: () => {},
-            on: (name, handler) => events.set(name, handler),
+            on: () => {},
             getSessionState: () => undefined,
             setSessionState: () => {},
-        });
-        // Timeline only answers while ACM is enabled for the session.
-        events.get("session_start")({ reason: "resume" }, {
-            sessionManager: { getSessionState: () => ({ enabled: true }), getEntries: () => [] },
         });
         const entries = [
             { id: "aaaaaaaa", type: "message", message: { role: "user", content: "Review the patch" } },
