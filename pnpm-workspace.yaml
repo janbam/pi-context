@@ -1,2 +1,4 @@
 overrides:
+  '@earendil-works/pi-ai': link:../../pi-mono/packages/ai
   '@earendil-works/pi-coding-agent': link:../../pi-mono/packages/coding-agent
+  '@earendil-works/pi-tui': link:../../pi-mono/packages/tui

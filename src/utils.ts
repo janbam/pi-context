@@ -12,8 +12,11 @@ export const formatTokens = (n: number | null | undefined) => {
   return n.toString();
 };
 
+/** Tools owned by pi-context; active only while ACM is enabled. */
+export const ContextToolNames: readonly string[] = ["context_checkpoint", "context_timeline", "context_compact"];
+
 /** Identify internal context tools for timeline folding and interval estimates. */
-export const isContextTool = (name: string) => ["context_checkpoint", "context_timeline", "context_compact"].includes(name);
+export const isContextTool = (name: string) => ContextToolNames.includes(name);
 
 /** Format Pi's window usage without confusing it with interval estimates. */
 export const formatContextUsage = (usage: ContextUsage | undefined, includeTokens = false): string => {

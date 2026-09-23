@@ -41,7 +41,7 @@ Launch Pi with the passive-entry fixture:
 pi --no-skills --no-extensions -e ./src/index.ts -e ./src/context.ts -e ./test/passive-custom-extension.ts
 ```
 
-1. Without running `/acm`, ask the agent to checkpoint, inspect the timeline, and call `context_compact`. Confirm automatic command-context acquisition succeeds without changing the editor or injecting `/acm` into model history.
+1. With `auto_enable = true` and without running `/acm`, ask the agent to checkpoint, inspect the timeline, and call `context_compact`. Confirm automatic command-context acquisition succeeds without changing the editor or injecting `/acm` into model history.
 2. Confirm that label, session-info, and non-contextual custom entries appended while `waitForIdle()` settles do not cancel compaction.
 3. Repeat while submitting a real user steering message before compaction settles; confirm that any message entry cancels compaction exactly once and creates no summary branch.
 4. Confirm that the next model request contains no orphaned tool result.
@@ -52,5 +52,6 @@ pi --no-skills --no-extensions -e ./src/index.ts -e ./src/context.ts -e ./test/p
 1. Start a new named session with `auto_enable = true`; confirm ACM is enabled without typing `/acm` and the session JSONL contains a `type: "session"` record with a nested `sessionState` field outside the conversation tree.
 2. Run `/acm disable`, exit, and resume with `pi -c`; confirm ACM stays disabled even though auto-enable remains configured.
 3. Run `/acm enable`, exit, and resume again; confirm ACM is enabled and `context_compact` still navigates.
-4. Change ACM state several times before sending a prompt; confirm only the first model call receives one `<system-notification>` immediately before the real user message and that it contains only the final state. Confirm later model calls and redundant `/acm enable` or `/acm disable` commands receive no notification.
-5. Create a new session with `/new`; confirm the configured auto-enable value initializes that new session independently.
+4. Change ACM state several times before sending a prompt; confirm the next request carries the final state only: enabled means the three context tools plus an `<acm>` system prompt section, disabled means neither. Confirm redundant `/acm enable` or `/acm disable` commands and later prompts add no system-message delta.
+5. With ACM enabled after an earlier disabled phase, compact to a checkpoint from the disabled phase; confirm the continuation still has the context tools (the `<acm>` section may return only with the next real prompt).
+6. Create a new session with `/new`; confirm the configured auto-enable value initializes that new session independently.

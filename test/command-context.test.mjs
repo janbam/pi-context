@@ -54,6 +54,8 @@ function createHarness({ dispatch = "immediate", idle = async () => {} } = {}) {
         on: (name, handler) => events.set(name, handler),
         getSessionState: () => undefined,
         setSessionState: () => {},
+        getActiveTools: () => [],
+        setActiveTools: () => {},
         setLabel: () => {},
         sendMessage: (...args) => operations.push(["continue", ...args]),
         sendUserMessage: (content, options) => {
