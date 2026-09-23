@@ -96,4 +96,4 @@ This extension adds the `context-management` skill, which guides agents to keep 
    View the active path as a structural map of checkpoints, summaries/compactions, branch points, user turns, and current position. Use it when orientation or compact target selection depends on history shape.
 
 3. **⏪ Compact (`context_compact`)**
-   Create a summarized continuation branch from an earlier checkpoint, history node, or `root`. The summary should restore the useful state after the target: current task, decisions, external side effects such as changed files or remote updates, validation state, source anchors, and the explicit next step.
+   Create a summarized continuation branch from an earlier checkpoint, history node, or `root`. The summary should restore the useful state after the target: current task, decisions, external side effects such as changed files or remote updates, validation state, source anchors, and the explicit next step. Targets before the session's first system message, including `root`, branch at that message, so the new path keeps the original system prompt ahead of the summary.

@@ -1,8 +1,9 @@
 import {
   type ExtensionAPI,
-  type SessionManager,
   DynamicBorder,
+  estimateTokens,
 } from "@earendil-works/pi-coding-agent";
+import { getCurrentSystemMessage } from "@earendil-works/pi-ai";
 import { Container, Text, Spacer } from "@earendil-works/pi-tui";
 import { formatTokens } from "./utils.js";
 
@@ -16,49 +17,35 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const sm = ctx.sessionManager as SessionManager;
-      const branch = sm.getBranch();
-      const systemPrompt = ctx.getSystemPrompt();
-      const tools = pi.getActiveTools();
-      const allTools = pi.getAllTools();
-      const activeToolDefs = allTools.filter(t => tools.includes(t.name));
+      // Count the session projection, i.e. the messages the model actually receives: it already
+      // applies native compaction, context_edit, summaries, and custom messages, and carries the
+      // prompt and tool loadout as system messages.
+      const messages = ctx.sessionManager.buildSessionProjection().messages;
 
-      const estimateTokens = (text: string) => Math.ceil(text.length / 4);
-
+      // Replay system deltas into the current prompt and tools once: replaced sections and
+      // removed tools must not count, and prompt text and tool declarations are separate categories.
+      const { toolsAdded: currentTools, ...currentPrompt } = getCurrentSystemMessage(messages) ?? { role: "system", content: "", timestamp: 0 };
+      const systemTokensRaw = estimateTokens(currentPrompt);
+      const toolDefTokensRaw = currentTools ? Math.ceil(JSON.stringify(currentTools).length / 4) : 0;
       let msgTokensRaw = 0;
       let toolUseTokensRaw = 0;
       let toolResultTokensRaw = 0;
 
-      for (const entry of branch) {
-        if (entry.type === "message") {
-          const m = entry.message;
-          if (m.role === "user") {
-            if (typeof m.content === "string") msgTokensRaw += estimateTokens(m.content);
-            else if (Array.isArray(m.content)) {
-              for (const p of m.content) if (p.type === "text") msgTokensRaw += estimateTokens(p.text);
-            }
-          } else if (m.role === "assistant") {
-            if (typeof m.content === "string") msgTokensRaw += estimateTokens(m.content);
-            else if (Array.isArray(m.content)) {
-              for (const p of m.content) {
-                if (p.type === "text") msgTokensRaw += estimateTokens(p.text);
-                if (p.type === "toolCall") toolUseTokensRaw += estimateTokens(JSON.stringify(p));
-              }
-            }
-          } else if (m.role === "toolResult") {
-            if (Array.isArray(m.content)) {
-              for (const p of m.content) if (p.type === "text") toolResultTokensRaw += estimateTokens(p.text);
-            }
-          } else if (m.role === "bashExecution") {
-            toolUseTokensRaw += estimateTokens(m.command || "");
-          }
-        } else if (entry.type === "branch_summary" || entry.type === "compaction") {
-          msgTokensRaw += estimateTokens(entry.summary || "");
+      for (const m of messages) {
+        if (m.role === "system") {
+          continue;
+        } else if (m.role === "assistant") {
+          // Tool calls count as tool traffic; text and thinking stay conversation.
+          toolUseTokensRaw += estimateTokens({ ...m, content: m.content.filter((p) => p.type === "toolCall") });
+          msgTokensRaw += estimateTokens({ ...m, content: m.content.filter((p) => p.type !== "toolCall") });
+        } else if (m.role === "toolResult") {
+          toolResultTokensRaw += estimateTokens(m);
+        } else if (m.role === "bashExecution") {
+          toolUseTokensRaw += estimateTokens(m);
+        } else {
+          msgTokensRaw += estimateTokens(m);
         }
       }
-
-      const systemTokensRaw = estimateTokens(systemPrompt);
-      const toolDefTokensRaw = estimateTokens(JSON.stringify(activeToolDefs));
       const totalActual = usage.tokens;
       const limit = usage.contextWindow;
       const usagePercent = usage.percent;
