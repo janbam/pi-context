@@ -52,6 +52,6 @@ pi --no-skills --no-extensions -e ./src/index.ts -e ./src/context.ts -e ./test/p
 1. Start a new named session with `auto_enable = true`; confirm ACM is enabled without typing `/acm` and the session JSONL contains a `type: "session"` record with a nested `sessionState` field outside the conversation tree.
 2. Run `/acm disable`, exit, and resume with `pi -c`; confirm ACM stays disabled even though auto-enable remains configured.
 3. Run `/acm enable`, exit, and resume again; confirm ACM is enabled and `context_compact` still navigates.
-4. Change ACM state several times before sending a prompt; confirm the next request carries the final state only: enabled means the three context tools plus an `<acm>` system prompt section, disabled means neither. Confirm redundant `/acm enable` or `/acm disable` commands and later prompts add no system-message delta.
-5. With ACM enabled after an earlier disabled phase, compact to a checkpoint from the disabled phase; confirm the continuation still has the context tools (the `<acm>` section may return only with the next real prompt).
+4. Change ACM state several times before sending a prompt; confirm the next request carries the final tool state only: enabled means the three context tools, disabled means none of them. Confirm neither state injects an ACM system prompt section, and redundant `/acm enable` or `/acm disable` commands and later prompts add no system-message delta.
+5. With ACM enabled after an earlier disabled phase, compact to a checkpoint from the disabled phase; confirm the continuation still has the context tools and no ACM system prompt section is injected.
 6. Create a new session with `/new`; confirm the configured auto-enable value initializes that new session independently.

@@ -20,16 +20,6 @@ export type AcmAction = "enable" | "disable";
 /** Session-global namespace key for pi-context's effective ACM state. */
 export const AcmSessionStateKey = "pi-context.acm";
 
-/** System prompt section name; pi renders it as `<acm>...</acm>`. */
-export const AcmPromptSectionName = "acm";
-
-/**
- * Prompt section text present only while ACM is enabled. Must stay byte-identical
- * across runs: any change rewrites the section and costs a prompt-cache miss.
- */
-export const AcmPromptSectionText =
-    "Agentic context management is enabled for this session. Use context_checkpoint, context_timeline, and context_compact according to the context-management skill.";
-
 /** Backward-compatible behavior when no pi-context config exists. */
 const DefaultAcmConfig: AcmConfig = { autoEnable: false };
 

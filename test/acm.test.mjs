@@ -7,8 +7,6 @@ import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 import registerPiContext from "../dist/index.js";
 import {
-    AcmPromptSectionName,
-    AcmPromptSectionText,
     AcmSessionStateKey,
     applyAcmToolLoadout,
     isNewSessionStart,
@@ -182,9 +180,10 @@ test("auto-enables only a new session without dispatching commands at startup", 
         assert.deepEqual(harness.writes, [{ key: AcmSessionStateKey, value: { enabled: true } }]);
         // The command context is acquired lazily by context_compact, never at startup.
         assert.deepEqual(harness.sentUserMessages, []);
-        // Tools were already active from pi's initial loadout; enabling adds only the section.
+        // Pi's initial loadout already exposes the enabled state without a prompt section.
         assert.deepEqual(harness.toolWrites, []);
-        assert.deepEqual(await harness.promptSections(), { [AcmPromptSectionName]: AcmPromptSectionText });
+        assert.ok(hasContextTools(harness.activeTools));
+        assert.deepEqual(await harness.promptSections(), {});
     } finally {
         if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
         else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
@@ -222,13 +221,14 @@ test("restores enabled and disabled sessions without applying auto-enable again"
     assert.equal(enabled.writes.length, 0);
     assert.equal(enabled.sentUserMessages.length, 0);
     assert.deepEqual(enabled.toolWrites, []);
-    assert.deepEqual(await enabled.promptSections(), { [AcmPromptSectionName]: AcmPromptSectionText });
+    assert.ok(hasContextTools(enabled.activeTools));
+    assert.deepEqual(await enabled.promptSections(), {});
 
     const disabled = createHarness({ persistedState: { enabled: false }, entries: [{ type: "message" }] });
     await disabled.emit("session_start", { reason: "resume" });
     assert.equal(disabled.writes.length, 0);
     assert.equal(disabled.sentUserMessages.length, 0);
-    // Disabled sessions expose neither the tools nor the section to the model.
+    // Disabled sessions remove the tools without adding prompt text.
     assert.deepEqual(disabled.activeTools, ["read", "bash"]);
     assert.deepEqual(await disabled.promptSections(), {});
 });
@@ -261,32 +261,30 @@ test("/acm toggles or sets state without redundant durable writes", async () => 
     assert.match(harness.notifications.at(-1).message, /Usage/);
 });
 
-test("/acm swaps tools and the prompt section; enabled runs repeat identical section text", async () => {
+test("/acm swaps tools without injecting prompt sections on enabled or disabled runs", async () => {
     const harness = createHarness({ persistedState: { enabled: false }, entries: [{ type: "message" }] });
     await harness.emit("session_start", { reason: "resume" });
     const acm = harness.commands.get("acm");
 
     await acm.handler("enable", harness.commandContext);
     assert.ok(hasContextTools(harness.activeTools));
-    // Byte-identical text on every run means no transcript delta and no cache miss.
-    const first = await harness.promptSections();
-    const second = await harness.promptSections();
-    assert.deepEqual(first, { [AcmPromptSectionName]: AcmPromptSectionText });
-    assert.equal(second[AcmPromptSectionName], first[AcmPromptSectionName]);
+    // Repeated enabled runs must signal ACM through tools alone.
+    assert.deepEqual(await harness.promptSections(), {});
+    assert.deepEqual(await harness.promptSections(), {});
 
     await acm.handler("disable", harness.commandContext);
     assert.ok(hasNoContextTools(harness.activeTools));
     assert.deepEqual(await harness.promptSections(), {});
 });
 
-test("enabled ACM omits the prompt section when a tool allowlist filtered the context tools out", async () => {
+test("enabled ACM respects a tool allowlist without injecting prompt sections", async () => {
     const harness = createHarness({
         persistedState: { enabled: true },
         entries: [{ type: "message" }],
         registry: ["read", "bash"],
     });
     await harness.emit("session_start", { reason: "resume" });
-    // The section must not point the model at tools it cannot call.
+    // Registry filtering still wins over the enabled session state.
     assert.deepEqual(harness.activeTools, ["read", "bash"]);
     assert.deepEqual(await harness.promptSections(), {});
 });

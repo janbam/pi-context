@@ -47,7 +47,7 @@ Control ACM (**A**gentic **C**ontext **M**anagement) for the current session:
 /acm disable  # Disable explicitly
 ```
 
-The effective state is stored outside the conversation tree and survives exit, `pi -c`, `/resume`, `/reload`, and tree navigation. Commands do not become conversation messages. While ACM is enabled, the model sees the three context tools and a short `<acm>` system prompt section; while disabled, it sees neither. The tools switch on the next model request. The section switches with the next real prompt: runs triggered by extensions (compaction continuations, subagent results) keep the section the conversation already has. The section text is constant, so an unchanged state costs nothing on later turns.
+The effective state is stored outside the conversation tree and survives exit, `pi -c`, `/resume`, `/reload`, and tree navigation. Commands do not become conversation messages. The model recognizes ACM availability through the three context tools: enabling ACM activates them, and disabling ACM removes them. The tools switch on the next model request. No ACM system prompt section is injected.
 
 Before compacting, the extension acquires the command context it needs for tree navigation automatically; no manual command is required after startup, resume, or `/reload`.
 
