@@ -12,8 +12,6 @@ import {
     type ToolCall,
 } from "@earendil-works/pi-ai";
 import {
-    AcmPromptSectionName,
-    AcmPromptSectionText,
     AcmSessionStateKey,
     applyAcmToolLoadout,
     isNewSessionStart,
@@ -23,7 +21,6 @@ import {
     type AcmSessionState,
 } from "./acm.js";
 import {
-    ContextToolNames,
     describeHistoryInterval,
     formatContextUsage,
     isContextTool as isInternal,
@@ -241,7 +238,7 @@ export default function (pi: ExtensionAPI) {
             acmEnabled = nextEnabled;
             if (!nextEnabled) compactRequest = null;
 
-            // Effective changes persist and swap the tool loadout; the prompt section follows on the next run.
+            // Effective changes persist and swap the tool loadout for the next model request.
             if (stateChanged) {
                 persistAcmState();
                 syncAcmTools();
@@ -280,16 +277,6 @@ export default function (pi: ExtensionAPI) {
         // Tree navigation restores the loadout recorded in the target path's transcript,
         // which may predate the current ACM state (e.g. compacting to an anchor before /acm enable).
         syncAcmTools();
-    });
-
-    pi.on("before_agent_start", (event) => {
-        // Section present iff enabled and the tools survived --tools/--exclude-tools filtering;
-        // omitting it removes it. Constant text keeps runs delta-free. Triggered runs skip this
-        // hook and keep whatever section the transcript already has.
-        const active = pi.getActiveTools();
-        if (acmEnabled && ContextToolNames.every((name) => active.includes(name))) {
-            event.systemPromptOptions.sections[AcmPromptSectionName] = AcmPromptSectionText;
-        }
     });
 
     pi.on("session_shutdown", () => {

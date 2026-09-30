@@ -15,7 +15,7 @@ Core rhythm:
 
 ## Runtime availability
 
-Agentic context management is enabled for the session exactly when the context tools are available; an `<acm>` system prompt section usually accompanies them. The user controls this with `/acm`, `/acm enable`, and `/acm disable`. When the tools are absent, do not ask the user to enable them unless context management is materially useful for the current task.
+Agentic context management is enabled for the session exactly when the context tools are available. The user controls this with `/acm`, `/acm enable`, and `/acm disable`. When the tools are absent, do not ask the user to enable them unless context management is materially useful for the current task.
 
 Use only these tools:
 

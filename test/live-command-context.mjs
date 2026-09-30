@@ -138,13 +138,14 @@ async function compactPhase(pi, phase, expectedAcquisitions, expectedSummaries, 
     if (!guard) {
         assert.ok(activeIds.includes(summaries.at(-1).id), "new summary is on the active branch");
         // Compacting to root branches at the prompt head, so the new path leads with the original
-        // system message (prompt, `<acm>`, context tools) and the continuation adds no prompt delta.
+        // system message (prompt and context tools) and the continuation adds no prompt delta.
         const path = activeIds.map((id) => byId.get(id)).reverse();
         const systems = path.filter((entry) => entry.type === "message" && entry.message.role === "system");
         assert.equal(systems.length, 1, "active path keeps exactly one system message");
         assert.equal(path.find((entry) => entry.type === "message"), systems[0], "path leads with the prompt head");
         assert.ok(path.indexOf(systems[0]) < path.indexOf(summaries.at(-1)), "summary follows the prompt head");
-        assert.ok(systems[0].message.sections?.preamble && systems[0].message.sections?.acm, `head carries prompt and acm: ${Object.keys(systems[0].message.sections ?? {})}`);
+        assert.ok(systems[0].message.sections?.preamble, "head carries the prompt");
+        assert.equal(systems[0].message.sections?.acm, undefined, "ACM adds no prompt section");
         assert.ok(systems[0].message.toolsAdded?.some((tool) => tool.name === "context_compact"), "head declares the context tools");
     }
     if (guard) {
